@@ -1,6 +1,6 @@
 import os
 from flask import Flask, send_from_directory, jsonify
-from scanner import scan_in_background, SCAN_STATUS
+from scanner import scan_in_background, set_status, get_status
 
 app = Flask(__name__, static_folder=".")
 
@@ -50,18 +50,19 @@ def serve_dashboard():
 
 @app.route('/api/update', methods=['POST'])
 def update_data():
-    if not SCAN_STATUS["is_running"]:
-        SCAN_STATUS["is_running"] = True
-        SCAN_STATUS["message"] = "Starting background task..."
+    status = get_status()
+    if not status.get("is_running", False):
+        set_status("Starting background task...", True)
         scan_in_background()
         return jsonify({"status": "started"})
     return jsonify({"status": "already_running"})
 
 @app.route('/api/status', methods=['GET'])
-def get_status():
+def api_get_status():
+    status = get_status()
     return jsonify({
-        "is_running": SCAN_STATUS["is_running"],
-        "message": SCAN_STATUS["message"]
+        "is_running": status.get("is_running", False),
+        "message": status.get("message", "")
     })
 
 if __name__ == '__main__':

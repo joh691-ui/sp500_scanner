@@ -7,6 +7,7 @@ import os
 import requests
 from io import StringIO
 import threading
+import json
 
 warnings.filterwarnings('ignore')
 
@@ -30,10 +31,25 @@ SCAN_STATUS = {
     "is_running": False,
     "message": "Waiting to start..."
 }
+STATUS_FILE = "status.json"
+
+def get_status():
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return SCAN_STATUS.copy()
 
 def set_status(msg, running=True):
     SCAN_STATUS["is_running"] = running
     SCAN_STATUS["message"] = msg
+    try:
+        with open(STATUS_FILE, 'w') as f:
+            json.dump(SCAN_STATUS, f)
+    except:
+        pass
     print(msg)
 
 def optimize_params(series, lookback_candidates, hold_candidates, tdpm):
