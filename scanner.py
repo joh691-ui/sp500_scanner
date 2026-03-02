@@ -538,10 +538,10 @@ def run_scan(output_dir="."):
             sc = SECTOR_COLORS.get(row['Sector'], '#6b7280')
             
             all_rows += f"""
-            <tr class="full-row {sig_class}">
+            <tr class="full-row {sig_class}" data-sector="{row['Sector'].lower()}">
                 <td>{int(row['Rank'])}</td>
                 <td class="ticker"><a href="https://finance.yahoo.com/chart/{row['Ticker']}" target="_blank" style="color:inherit;text-decoration:none;">{row['Ticker']}</a><br><span class="etf-name">{row['Name'][:30]}</span></td>
-                <td><span style="color:{sc};font-size:11px">{row['Sector'][:20]}</span></td>
+                <td><span style="color:{sc};font-size:11px;display:inline-block;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{row['Sector']}">{row['Sector']}</span></td>
                 <td>{row['Score']:.1f}</td>
                 <td style="color:{mom_color}">{row['Mom_Pct']:+.1f}%</td>
                 <td>{row['Confirmations']}</td>
@@ -780,7 +780,7 @@ function filterTable() {{
     rows.forEach(row => {{
         const text = row.textContent.toLowerCase();
         const matchSearch = !search || text.includes(search);
-        const matchSector = !sector || text.includes(sector);
+        const matchSector = !sector || (row.dataset.sector || '').includes(sector);
         row.style.display = matchSearch && matchSector ? '' : 'none';
     }});
 }}
