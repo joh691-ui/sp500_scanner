@@ -695,8 +695,8 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 <table>
 <thead>
     <tr>
-        <th>Rank</th><th>Ticker</th><th>Price</th><th>Score</th><th>Signal</th>
-        <th>Momentum (opt. LB)</th><th>MTF ●</th><th>Trend Phase</th><th>Vol 20d</th><th>Hold</th><th>Weight</th>
+        <th title="Ranking by composite score">Rank</th><th title="Stock ticker symbol and company name">Ticker</th><th title="Latest closing price (USD)">Price</th><th title="Composite score (0–100+): weighted sum of momentum, confirmation, slope, Sharpe, distance from high, volume and trend runway. Adjusted by VIX regime.">Score</th><th title="BUY = positive momentum in optimal lookback. STRONG BUY = also confirmed by trend slope and multi-timeframe.">Signal</th>
+        <th title="Price return over the stock-specific optimal lookback period (the lookback that historically gave best Sharpe ratio).">Momentum (opt. LB)</th><th title="Multi-Timeframe momentum dots (1m/3m/6m/12m). Green = positive, Red = negative.">MTF ●</th><th title="Phase of the momentum cycle based on how much of the optimal hold period has been consumed. EARLY = fresh signal, MID = halfway, LATE = nearing end, OVER = signal expired.">Trend Phase</th><th title="Annualised 20-day historical volatility (standard deviation of daily returns × √252).">Vol 20d</th><th title="Historically optimal holding period in months for this stock (found by Sharpe optimisation).">Hold</th><th title="Suggested portfolio weight (%), calculated as inverse-volatility weighted, capped at 10% per stock.">Weight</th>
     </tr>
 </thead>
 <tbody>{top_rows}</tbody>
@@ -726,7 +726,7 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 <div class="full-table">
 <table id="fullTable">
 <thead>
-    <tr><th>#</th><th>Ticker</th><th>Sector</th><th>Score</th><th>Mom%</th><th>Conf</th><th>Trend</th><th>Vol%</th><th>High%</th><th>Signal</th></tr>
+    <tr><th title="Ranking by composite score">#</th><th title="Stock ticker symbol and company name">Ticker</th><th title="GICS sector">Sector</th><th title="Composite score (0–100+): weighted sum of momentum, confirmation, slope, Sharpe, distance from high, volume and trend runway.">Score</th><th title="Price return over the stock-specific optimal lookback period.">Mom%</th><th title="Multi-timeframe confirmation: how many of the 4 lookback windows (1m/3m/6m/12m) show positive momentum.">Conf</th><th title="Trend phase (EARLY/MID/LATE/OVER) and months in signal → months remaining.">Trend</th><th title="Annualised 20-day historical volatility.">Vol%</th><th title="Distance from 200-day high in percent. Negative = below peak.">High%</th><th title="BUY = positive momentum. STRONG = also confirmed by slope and multi-timeframe.">Signal</th></tr>
 </thead>
 <tbody>{all_rows}</tbody>
 </table>
