@@ -1,7 +1,7 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import warnings
 import os
 import requests
@@ -547,12 +547,19 @@ def run_scan(output_dir="."):
         regime_colors = {"LOW_VOL": "#22c55e", "NORMAL": "#eab308", "ELEVATED": "#f97316", "CRISIS": "#ef4444"}
         regime_color = regime_colors.get(regime, "#6b7280")
         
+        # Compute Swedish time (CET/CEST) cleanly
+        try:
+            from zoneinfo import ZoneInfo
+            stockholm_now = datetime.now(ZoneInfo('Europe/Stockholm'))
+        except Exception:
+            stockholm_now = datetime.now(timezone.utc) + timedelta(hours=1)
+        
         html = f"""<!DOCTYPE html>
 <html lang="sv">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>S&amp;P 500 Scanner — {datetime.now().strftime('%Y-%m-%d')}</title>
+<title>S&amp;P 500 Scanner — {stockholm_now.strftime('%Y-%m-%d')}</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {{
@@ -636,15 +643,16 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 <div class="noise"></div>
 <div class="container">
 
-<div class="header">
+    <div class="header">
     <div class="header-left">
         <h1>S&amp;P 500 MOMENTUM SCANNER</h1>
         <div class="subtitle">Per-stock optimal lookback × hold period | {len(df)} stocks scanned</div>
     </div>
     <div class="header-right">
-        <div class="scan-date">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
-        <div class="regime-badge">{regime.replace('_',' ')}</div>
+        <div class="scan-date">{stockholm_now.strftime('%Y-%m-%d %H:%M')} Stockholm</div>
+        <div class="regime-badge" title="{regime_label}">{regime.replace('_',' ')}</div>
         <div class="vix-info">VIX {current_vix:.1f} | 20d avg {vix_sma:.1f}</div>
+        <div class="vix-info" style="font-size:11px;color:{regime_color};margin-top:2px">{regime_label}</div>
     </div>
 </div>
 
@@ -735,7 +743,7 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 </div>
 
 <div class="footer">
-    S&amp;P 500 Scanner v1.0 — {datetime.now().strftime('%Y-%m-%d')}<br>
+    S&amp;P 500 Scanner v1.0 — {stockholm_now.strftime('%Y-%m-%d')}<br>
     This is not investment advice. Historical performance does not guarantee future results.
 </div>
 
