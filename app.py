@@ -42,7 +42,11 @@ def serve_dashboard():
             </body>
         </html>
         """
-    return send_from_directory('.', 'sp500_scanner_dashboard.html')
+    response = send_from_directory('.', 'sp500_scanner_dashboard.html')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/api/update', methods=['POST'])
 def update_data():
