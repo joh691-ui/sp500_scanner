@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.idea/
+.vscode/
+
+# Ignore generated output files unless you want them in git
+# We'll allow them so GitHub Pages could work (if you used GH pages),
+# but Render will regenerate them. Actually, Render regenerates them, so better to ignore them in Git.
+sp500_scanner_dashboard.html
+sp500_scanner_results.csv
+sp500_optimal_params.csv

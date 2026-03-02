@@ -1,0 +1,751 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import warnings
+import os
+import requests
+from io import StringIO
+import threading
+
+warnings.filterwarnings('ignore')
+
+# Konfiguration
+LOOKBACK_CANDIDATES = [1, 2, 3, 4, 5, 6, 9, 12]
+HOLD_CANDIDATES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+MIN_HISTORY_DAYS = 252 * 5  # ~5 år
+TOP_N = 25
+TRADING_DAYS_PER_MONTH = 21
+SECONDARY_LOOKBACKS = [1, 3, 6, 12]
+FAST_MODE = False
+FAST_LOOKBACK = 6
+FAST_HOLD = 6
+SECTOR_CAP_PCT = 0.30
+FILTER_OVER_PHASE = True
+MOM_CAP_PCT = 150.0
+SLOPE_CAP_ANN = 400.0
+
+# Global State for Status Polling
+SCAN_STATUS = {
+    "is_running": False,
+    "message": "Väntar på start..."
+}
+
+def set_status(msg, running=True):
+    SCAN_STATUS["is_running"] = running
+    SCAN_STATUS["message"] = msg
+    print(msg)
+
+def optimize_params(series, lookback_candidates, hold_candidates, tdpm):
+    best_sharpe = -np.inf
+    best_lb = lookback_candidates[0]
+    best_hold = hold_candidates[0]
+    monthly = series.resample('ME').last().dropna()
+    for lb in lookback_candidates:
+        for hold in hold_candidates:
+            if len(monthly) < lb + hold + 24:
+                continue
+            rets = []
+            for start in range(len(monthly) - lb - hold):
+                entry_ret = monthly.iloc[start + lb] / monthly.iloc[start] - 1
+                if entry_ret > 0:
+                    exit_idx = min(start + lb + hold, len(monthly) - 1)
+                    trade_ret = monthly.iloc[exit_idx] / monthly.iloc[start + lb] - 1
+                else:
+                    trade_ret = 0.0
+                rets.append(trade_ret)
+            rets = np.array(rets)
+            if len(rets) < 12 or rets.std() == 0:
+                continue
+            sharpe = rets.mean() / rets.std() * np.sqrt(12)
+            if sharpe > best_sharpe:
+                best_sharpe = sharpe
+                best_lb = lb
+                best_hold = hold
+    return best_lb, best_hold, best_sharpe
+
+def run_scan(output_dir="."):
+    global SCAN_STATUS
+    if SCAN_STATUS["is_running"]:
+        return
+    
+    try:
+        set_status("Hämtar S&P 500-komponenter från Wikipedia...")
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(StringIO(resp.text))
+        sp500_table = tables[0]
+        sp500_table.columns = sp500_table.columns.str.strip()
+        
+        ticker_col = [c for c in sp500_table.columns if 'Symbol' in c or 'Ticker' in c][0]
+        name_col   = [c for c in sp500_table.columns if 'Security' in c or 'Name' in c][0]
+        sector_col = [c for c in sp500_table.columns if 'Sector' in c][0]
+        
+        sp500_table['yf_ticker'] = sp500_table[ticker_col].str.replace('.', '-', regex=False)
+        TICKERS = sp500_table['yf_ticker'].tolist()
+        STOCK_NAMES = dict(zip(sp500_table['yf_ticker'], sp500_table[name_col]))
+        STOCK_SECTORS = dict(zip(sp500_table['yf_ticker'], sp500_table[sector_col]))
+        
+        set_status(f"Hittade {len(TICKERS)} aktier. Bestämmer tidsram...")
+        
+        lookback_days = max(LOOKBACK_CANDIDATES) * TRADING_DAYS_PER_MONTH
+        opt_start = (datetime.now() - timedelta(days=252*11)).strftime('%Y-%m-%d')
+        recent_start = (datetime.now() - timedelta(days=lookback_days + 60)).strftime('%Y-%m-%d')
+        
+        download_start = recent_start if FAST_MODE else opt_start
+        
+        set_status(f"Laddar ner prisdata från {download_start} (tar lite tid)...")
+        
+        BATCH_SIZE = 100
+        all_prices = []
+        all_volumes = []
+        
+        for i in range(0, len(TICKERS), BATCH_SIZE):
+            batch = TICKERS[i:i+BATCH_SIZE]
+            set_status(f"Laddar ner prisdata: Batch {i//BATCH_SIZE + 1}/{(len(TICKERS)-1)//BATCH_SIZE + 1}")
+            raw = yf.download(batch, start=download_start, auto_adjust=True, threads=True, progress=False)
+            if isinstance(raw.columns, pd.MultiIndex):
+                p = raw['Close'].copy()
+                v = raw['Volume'].copy()
+                if isinstance(p.columns, pd.MultiIndex):
+                    p.columns = p.columns.droplevel(0)
+                if isinstance(v.columns, pd.MultiIndex):
+                    v.columns = v.columns.droplevel(0)
+            else:
+                if len(batch) == 1:
+                    p = pd.DataFrame(raw['Close'])
+                    p.columns = batch
+                    v = pd.DataFrame(raw['Volume'])
+                    v.columns = batch
+                else:
+                    p = pd.DataFrame()
+                    v = pd.DataFrame()
+            all_prices.append(p)
+            all_volumes.append(v)
+            
+        prices = pd.concat(all_prices, axis=1)
+        volumes = pd.concat(all_volumes, axis=1)
+        prices = prices.loc[:, ~prices.columns.duplicated()].dropna(how='all')
+        volumes = volumes.loc[:, ~volumes.columns.duplicated()].dropna(how='all')
+        
+        set_status("Hämtar VIX data...")
+        try:
+            vix_raw = yf.download("^VIX", start=recent_start, auto_adjust=True, progress=False)['Close']
+            current_vix = float(vix_raw.iloc[-1].iloc[0]) if hasattr(vix_raw.iloc[-1], 'iloc') else float(vix_raw.iloc[-1])
+            vix_sma_s = vix_raw.rolling(20).mean().iloc[-1]
+            vix_sma = float(vix_sma_s.iloc[0]) if hasattr(vix_sma_s, 'iloc') else float(vix_sma_s)
+        except:
+            current_vix = 20.0
+            vix_sma = 20.0
+            
+        if current_vix < 15:
+            regime = "LOW_VOL"
+            regime_label = "🟢 LÅG VOLATILITET — Favorisera aggressiva positioner"
+            regime_adj = 1.2
+        elif current_vix < 22:
+            regime = "NORMAL"
+            regime_label = "🟡 NORMALT — Standard momentumsignaler tillförlitliga"
+            regime_adj = 1.0
+        elif current_vix < 30:
+            regime = "ELEVATED"
+            regime_label = "🟠 FÖRHÖJD VOL — Föredra kvalitetsmomentum, minska positioner"
+            regime_adj = 0.8
+        else:
+            regime = "CRISIS"
+            regime_label = "🔴 KRIS-VOLATILITET — Minimera equity-exponering"
+            regime_adj = 0.5
+
+        if FAST_MODE:
+            OPTIMAL_PARAMS = {t: (FAST_LOOKBACK, FAST_HOLD, np.nan) for t in TICKERS if t in prices.columns}
+        else:
+            set_status("Optimerar (lookback × hold) per aktie...")
+            OPTIMAL_PARAMS = {}
+            valid_tickers = [t for t in TICKERS if t in prices.columns]
+            for i, ticker in enumerate(valid_tickers):
+                if i % 50 == 0:
+                    set_status(f"Optimerar: {i}/{len(valid_tickers)} klara...")
+                series = prices[ticker].dropna()
+                if len(series) < MIN_HISTORY_DAYS:
+                    OPTIMAL_PARAMS[ticker] = (6, 6, np.nan)
+                    continue
+                try:
+                    lb, hold, sharpe = optimize_params(series, LOOKBACK_CANDIDATES, HOLD_CANDIDATES, TRADING_DAYS_PER_MONTH)
+                    OPTIMAL_PARAMS[ticker] = (lb, hold, round(sharpe, 2))
+                except Exception:
+                    OPTIMAL_PARAMS[ticker] = (6, 6, np.nan)
+            
+            opt_df = pd.DataFrame([
+                {'Ticker': t, 'Opt_LB': v[0], 'Opt_Hold': v[1], 'Hist_Sharpe': v[2]}
+                for t, v in OPTIMAL_PARAMS.items()
+            ])
+            opt_df.to_csv(os.path.join(output_dir, 'sp500_optimal_params.csv'), index=False)
+
+        set_status("Beräknar momentumsignaler...")
+        results = []
+        for ticker, (opt_lb, opt_hold, hist_sharpe) in OPTIMAL_PARAMS.items():
+            if ticker not in prices.columns:
+                continue
+            series = prices[ticker].dropna()
+            if len(series) < 200:
+                continue
+            current_price = series.iloc[-1]
+            lb_days = opt_lb * TRADING_DAYS_PER_MONTH
+            
+            if len(series) > lb_days:
+                primary_mom = (series.iloc[-1] / series.iloc[-lb_days] - 1) * 100
+            else:
+                continue
+                
+            confirmations = 0
+            total_checks = 0
+            mtf_details = {}
+            for lb in SECONDARY_LOOKBACKS:
+                d = lb * TRADING_DAYS_PER_MONTH
+                if len(series) > d:
+                    ret = (series.iloc[-1] / series.iloc[-d] - 1) * 100
+                    mtf_details[f"{lb}m"] = ret
+                    if ret > 0:
+                        confirmations += 1
+                    total_checks += 1
+            confirmation_pct = confirmations / total_checks * 100 if total_checks > 0 else 0
+            
+            if len(series) >= 50:
+                y = np.log(series.iloc[-50:].values)
+                x = np.arange(len(y))
+                slope = np.polyfit(x, y, 1)[0]
+                ann_slope = slope * 252 * 100
+            else:
+                ann_slope = 0
+                
+            if len(series) >= 21:
+                daily_ret = series.pct_change().dropna()
+                vol_20d = daily_ret.iloc[-20:].std() * np.sqrt(252) * 100
+            else:
+                vol_20d = 30
+                
+            if len(series) >= 200:
+                high_200 = series.iloc[-200:].max()
+                dist_from_high = (current_price / high_200 - 1) * 100
+            else:
+                dist_from_high = 0
+                
+            if ticker in volumes.columns:
+                vol_series = volumes[ticker].dropna()
+                if len(vol_series) >= 50:
+                    vol_20 = vol_series.iloc[-20:].mean()
+                    vol_50 = vol_series.iloc[-50:].mean()
+                    vol_ratio = vol_20 / vol_50 if vol_50 > 0 else 1
+                else:
+                    vol_ratio = 1
+            else:
+                vol_ratio = 1
+                
+            months_in_signal = 0
+            for offset_months in range(0, 24):
+                offset_days = offset_months * TRADING_DAYS_PER_MONTH
+                end_idx = len(series) - 1 - offset_days
+                start_idx = end_idx - lb_days
+                if start_idx < 0 or end_idx < 0:
+                    break
+                hist_ret = series.iloc[end_idx] / series.iloc[start_idx] - 1
+                if hist_ret > 0:
+                    months_in_signal = offset_months + 1
+                else:
+                    break
+                    
+            remaining_runway = max(0, opt_hold - months_in_signal)
+            pct_consumed = min(months_in_signal / opt_hold, 1.5) if opt_hold > 0 else 1
+            
+            if pct_consumed <= 0.25:
+                trend_phase = "EARLY"; trend_emoji = "🟢"
+            elif pct_consumed <= 0.75:
+                trend_phase = "MID"; trend_emoji = "🟢"
+            elif pct_consumed <= 1.0:
+                trend_phase = "LATE"; trend_emoji = "🟡"
+            else:
+                trend_phase = "OVER"; trend_emoji = "🔴"
+                
+            mom_flagged = abs(primary_mom) > MOM_CAP_PCT
+            slope_flagged = abs(ann_slope) > SLOPE_CAP_ANN
+            
+            mom_for_score   = np.clip(primary_mom, -MOM_CAP_PCT, MOM_CAP_PCT)
+            slope_for_score = np.clip(ann_slope, -SLOPE_CAP_ANN, SLOPE_CAP_ANN)
+            
+            over_phase_block = FILTER_OVER_PHASE and (trend_phase == "OVER")
+            
+            hist_sharpe_capped = min(hist_sharpe if not np.isnan(hist_sharpe) else 1.0, 8.0)
+            
+            mom_score    = np.clip(mom_for_score / 0.5, -100, 100)
+            conf_score   = confirmation_pct
+            slope_score  = np.clip(slope_for_score / 0.3, -100, 100)
+            sharpe_score = np.clip(hist_sharpe_capped / 5 * 100, 0, 100)
+            high_score   = np.clip((dist_from_high + 10) * 10, 0, 100)
+            vol_score    = np.clip(vol_ratio * 50, 0, 100)
+            
+            if pct_consumed <= 0.25:
+                runway_score = 100
+            elif pct_consumed <= 0.75:
+                runway_score = 100 - (pct_consumed - 0.25) / 0.50 * 40
+            elif pct_consumed <= 1.0:
+                runway_score = 60 - (pct_consumed - 0.75) / 0.25 * 40
+            else:
+                runway_score = 0
+                
+            composite = (
+                0.30 * mom_score +
+                0.15 * conf_score +
+                0.10 * slope_score +
+                0.10 * sharpe_score +
+                0.10 * high_score +
+                0.05 * vol_score +
+                0.20 * runway_score
+            ) * regime_adj
+            
+            buy_signal  = primary_mom > 0 and not over_phase_block
+            strong_buy  = buy_signal and confirmation_pct >= 75 and ann_slope > 0
+            
+            flags = []
+            if mom_flagged:   flags.append(f"⚠️MOM>{MOM_CAP_PCT:.0f}%")
+            if slope_flagged: flags.append("⚠️SLOPE_EXT")
+            if over_phase_block: flags.append("🚫OVER_BLOCKED")
+            flag_str = " ".join(flags)
+            
+            target_vol = 15
+            raw_weight = target_vol / vol_20d if vol_20d > 0 else 0.5
+            position_pct = np.clip(raw_weight * 10, 0.5, 10)
+            
+            results.append({
+                'Ticker': ticker,
+                'Name': STOCK_NAMES.get(ticker, ticker),
+                'Sector': STOCK_SECTORS.get(ticker, 'Unknown'),
+                'Price': round(current_price, 2),
+                'Opt_LB': opt_lb,
+                'Opt_Hold': opt_hold,
+                'Hist_Sharpe': round(hist_sharpe_capped, 2) if not np.isnan(hist_sharpe_capped) else 0,
+                'Mom_Pct': round(primary_mom, 2),
+                'Confirmations': f"{confirmations}/{total_checks}",
+                'Conf_Pct': round(confirmation_pct, 1),
+                'Slope_Ann': round(ann_slope, 1),
+                'Vol_20d': round(vol_20d, 1),
+                'Dist_High': round(dist_from_high, 1),
+                'Vol_Ratio': round(vol_ratio, 2),
+                'Score': round(composite, 1),
+                'Signal': "🟢 STRONG BUY" if strong_buy else ("🟡 BUY" if buy_signal else "⬛ HOLD/AVOID"),
+                'Trend_Age': months_in_signal,
+                'Runway': remaining_runway,
+                'Pct_Consumed': round(pct_consumed * 100, 1),
+                'Trend_Phase': trend_phase,
+                'Trend_Emoji': trend_emoji,
+                'Pos_Size': round(position_pct, 1),
+                'Mom_1m': round(mtf_details.get('1m', np.nan), 1),
+                'Mom_3m': round(mtf_details.get('3m', np.nan), 1),
+                'Mom_6m': round(mtf_details.get('6m', np.nan), 1),
+                'Mom_12m': round(mtf_details.get('12m', np.nan), 1),
+                'Flags': flag_str,
+                'Mom_Flagged': mom_flagged,
+            })
+            
+        df = pd.DataFrame(results).sort_values('Score', ascending=False).reset_index(drop=True)
+        df['Rank'] = range(1, len(df) + 1)
+        
+        buys = df[df['Signal'].str.contains('BUY')]
+        strong_buys = df[df['Signal'].str.contains('STRONG')]
+        SECTOR_MAX = max(1, int(np.floor(TOP_N * SECTOR_CAP_PCT)))
+        
+        selected = []
+        sector_counts = {}
+        for _, row in buys.iterrows():
+            if len(selected) >= TOP_N:
+                break
+            sector = row['Sector']
+            cnt = sector_counts.get(sector, 0)
+            if cnt >= SECTOR_MAX:
+                continue
+            selected.append(row)
+            sector_counts[sector] = cnt + 1
+            
+        top_n = pd.DataFrame(selected).reset_index(drop=True)
+        df.to_csv(os.path.join(output_dir, 'sp500_scanner_results.csv'), index=False)
+        
+        set_status("Genererar HTML-dashboard...")
+        
+        SECTOR_COLORS = {
+            'Information Technology': '#3b82f6',
+            'Health Care': '#22c55e',
+            'Financials': '#f59e0b',
+            'Consumer Discretionary': '#ec4899',
+            'Industrials': '#8b5cf6',
+            'Communication Services': '#06b6d4',
+            'Consumer Staples': '#84cc16',
+            'Energy': '#f97316',
+            'Utilities': '#14b8a6',
+            'Real Estate': '#e11d48',
+            'Materials': '#a78bfa',
+            'Unknown': '#6b7280',
+        }
+        
+        top_rows = ""
+        for _, row in top_n.iterrows():
+            sig_class = "strong-buy" if "STRONG" in row['Signal'] else "buy"
+            sig_text  = "STRONG BUY" if "STRONG" in row['Signal'] else "BUY"
+            mom_width = min(abs(row['Mom_Pct']) * 2, 100)
+            mom_color = "#22c55e" if row['Mom_Pct'] > 0 else "#ef4444"
+            mtf_dots = ""
+            for lb_label, val in [("1m", row['Mom_1m']), ("3m", row['Mom_3m']), ("6m", row['Mom_6m']), ("12m", row['Mom_12m'])]:
+                color = "#22c55e" if val > 0 else "#ef4444" if val < 0 else "#6b7280"
+                mtf_dots += f'<span class="mtf-dot" style="background:{color}" title="{lb_label}: {val:+.1f}%"></span>'
+            total_weight = top_n['Pos_Size'].sum()
+            norm_w = row['Pos_Size'] / total_weight * 100 if total_weight > 0 else 0
+            phase_colors = {"EARLY": "#22c55e", "MID": "#3b82f6", "LATE": "#f59e0b", "OVER": "#ef4444"}
+            phase_color = phase_colors.get(row['Trend_Phase'], "#6b7280")
+            runway_text = f"{int(row['Trend_Age'])}m → {int(row['Runway'])}m kvar"
+            sector_color = SECTOR_COLORS.get(row['Sector'], '#6b7280')
+            
+            top_rows += f"""
+            <tr class="etf-row {sig_class}">
+                <td class="rank">#{int(row['Rank'])}</td>
+                <td class="ticker">{row['Ticker']}<br><span class="etf-name">{row['Name'][:35]}</span>
+                    <br><span class="sector-badge" style="background:{sector_color}20;color:{sector_color};border:1px solid {sector_color}40">{row['Sector']}</span></td>
+                <td class="price">${row['Price']:.2f}</td>
+                <td class="score">{row['Score']:.1f}</td>
+                <td class="signal"><span class="signal-badge {sig_class}">{sig_text}</span></td>
+                <td class="momentum">
+                    <div class="mom-container">
+                        <span class="mom-value" style="color:{mom_color}">{row['Mom_Pct']:+.1f}%</span>
+                        <div class="mom-bar-bg"><div class="mom-bar" style="width:{mom_width}%;background:{mom_color}"></div></div>
+                    </div>
+                </td>
+                <td class="mtf">{mtf_dots}</td>
+                <td class="trend-phase">
+                    <span class="phase-badge" style="background:{phase_color}18;color:{phase_color};border:1px solid {phase_color}40">{row['Trend_Phase']}</span>
+                    <span class="runway-detail">{runway_text}</span>
+                </td>
+                <td class="vol">{row['Vol_20d']:.1f}%</td>
+                <td class="hold">{int(row['Opt_Hold'])}m</td>
+                <td class="weight">{norm_w:.1f}%</td>
+            </tr>"""
+            
+        all_rows = ""
+        for _, row in df.iterrows():
+            sig_class = "strong-buy" if "STRONG" in row['Signal'] else "buy" if "BUY" in row['Signal'] else "avoid"
+            sig_text  = "STRONG" if "STRONG" in row['Signal'] else "BUY" if "BUY" in row['Signal'] else "AVOID"
+            mom_color = "#22c55e" if row['Mom_Pct'] > 0 else "#ef4444"
+            phase_colors_full = {"EARLY": "#22c55e", "MID": "#3b82f6", "LATE": "#f59e0b", "OVER": "#ef4444"}
+            pc = phase_colors_full.get(row['Trend_Phase'], "#6b7280")
+            sc = SECTOR_COLORS.get(row['Sector'], '#6b7280')
+            
+            all_rows += f"""
+            <tr class="full-row {sig_class}">
+                <td>{int(row['Rank'])}</td>
+                <td class="ticker">{row['Ticker']}<br><span class="etf-name">{row['Name'][:30]}</span></td>
+                <td><span style="color:{sc};font-size:11px">{row['Sector'][:20]}</span></td>
+                <td>{row['Score']:.1f}</td>
+                <td style="color:{mom_color}">{row['Mom_Pct']:+.1f}%</td>
+                <td>{row['Confirmations']}</td>
+                <td><span style="color:{pc};font-weight:600">{row['Trend_Phase']}</span><br><span class="etf-name">{int(row['Trend_Age'])}m→{int(row['Runway'])}m</span></td>
+                <td>{row['Vol_20d']:.1f}%</td>
+                <td>{row['Dist_High']:+.1f}%</td>
+                <td><span class="signal-badge-sm {sig_class}">{sig_text}</span></td>
+            </tr>"""
+            
+        sector_rows = ""
+        buy_sectors_sorted = buys.groupby('Sector').agg(
+            Antal=('Ticker', 'count'),
+            Avg_Score=('Score', 'mean'),
+            Avg_Mom=('Mom_Pct', 'mean')
+        ).sort_values('Antal', ascending=False).reset_index()
+        for _, row in buy_sectors_sorted.iterrows():
+            sc = SECTOR_COLORS.get(row['Sector'], '#6b7280')
+            sector_rows += f"""
+            <tr>
+                <td><span style="color:{sc};font-weight:600">{row['Sector']}</span></td>
+                <td style="text-align:center">{int(row['Antal'])}</td>
+                <td style="text-align:right">{row['Avg_Score']:.1f}</td>
+                <td style="text-align:right;color:{'#22c55e' if row['Avg_Mom']>0 else '#ef4444'}">{row['Avg_Mom']:+.1f}%</td>
+            </tr>"""
+            
+        regime_colors = {"LOW_VOL": "#22c55e", "NORMAL": "#eab308", "ELEVATED": "#f97316", "CRISIS": "#ef4444"}
+        regime_color = regime_colors.get(regime, "#6b7280")
+        
+        html = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NQL S&amp;P 500 Scanner — {datetime.now().strftime('%Y-%m-%d')}</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {{
+    --bg-primary: #0a0e17; --bg-card: #111827; --bg-card-hover: #1a2332; --border: #1e293b; --text-primary: #e2e8f0; --text-secondary: #94a3b8; --text-muted: #64748b;
+    --accent-green: #22c55e; --accent-red: #ef4444; --accent-gold: #f59e0b; --accent-blue: #3b82f6; --accent-purple: #a855f7;
+}}
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ background: var(--bg-primary); color: var(--text-primary); font-family: 'Outfit', sans-serif; min-height: 100vh; overflow-x: hidden; }}
+.noise {{ position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; }}
+.container {{ max-width: 1500px; margin: 0 auto; padding: 40px 24px; position: relative; z-index: 1; }}
+.header {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }}
+.header-left h1 {{ font-size: 28px; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+.header-left .subtitle {{ font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--text-muted); margin-top: 4px; }}
+.header-right {{ text-align: right; }}
+.scan-date {{ font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--text-secondary); }}
+.regime-badge {{ display: inline-block; margin-top: 8px; padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+    background: {regime_color}18; color: {regime_color}; border: 1px solid {regime_color}40; }}
+.vix-info {{ font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); margin-top: 4px; }}
+.stats-bar {{ display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 32px; }}
+.stat-card {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; }}
+.stat-card .label {{ font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }}
+.stat-card .value {{ font-size: 28px; font-weight: 700; margin-top: 4px; font-family: 'JetBrains Mono', monospace; }}
+.stat-card .sub {{ font-size: 12px; color: var(--text-muted); margin-top: 2px; }}
+.section-title {{ display: flex; justify-content: space-between; align-items: center; font-size: 18px; font-weight: 700; margin-bottom: 16px; padding-left: 12px; border-left: 3px solid var(--accent-gold); }}
+table {{ width: 100%; border-collapse: collapse; }}
+th {{ font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); padding: 10px 12px;
+    text-align: left; border-bottom: 1px solid var(--border); font-family: 'JetBrains Mono', monospace; }}
+td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border); }}
+.etf-row, .full-row {{ transition: background 0.15s; }}
+.etf-row:hover, .full-row:hover {{ background: var(--bg-card-hover); }}
+.rank {{ font-weight: 700; color: var(--accent-gold); font-family: 'JetBrains Mono', monospace; }}
+.ticker {{ font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 13px; }}
+.etf-name {{ font-family: 'Outfit', sans-serif; font-weight: 400; font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }}
+.sector-badge {{ display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-top: 3px; font-family: 'JetBrains Mono', monospace; }}
+.price {{ font-family: 'JetBrains Mono', monospace; color: var(--text-secondary); }}
+.score {{ font-weight: 700; font-family: 'JetBrains Mono', monospace; }}
+.signal-badge {{ display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; font-family: 'JetBrains Mono', monospace; }}
+.signal-badge.strong-buy {{ background: #22c55e20; color: #22c55e; border: 1px solid #22c55e40; }}
+.signal-badge.buy {{ background: #3b82f620; color: #3b82f6; border: 1px solid #3b82f640; }}
+.signal-badge-sm {{ display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }}
+.signal-badge-sm.strong-buy {{ background: #22c55e18; color: #22c55e; }}
+.signal-badge-sm.buy {{ background: #3b82f618; color: #3b82f6; }}
+.signal-badge-sm.avoid {{ background: #ef444418; color: #ef4444; }}
+.mom-container {{ display: flex; align-items: center; gap: 8px; }}
+.mom-value {{ font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; min-width: 55px; }}
+.mom-bar-bg {{ flex: 1; height: 4px; background: #1e293b; border-radius: 2px; min-width: 40px; }}
+.mom-bar {{ height: 100%; border-radius: 2px; }}
+.mtf-dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 2px; }}
+.top10-table {{ background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 40px; }}
+.full-table {{ background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 40px; }}
+.sector-table {{ background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 40px; }}
+.full-row.avoid {{ opacity: 0.4; }}
+.hold {{ font-family: 'JetBrains Mono', monospace; color: var(--accent-purple); }}
+.weight {{ font-family: 'JetBrains Mono', monospace; color: var(--accent-gold); font-weight: 600; }}
+.trend-phase {{ white-space: nowrap; }}
+.phase-badge {{ display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; font-family: 'JetBrains Mono', monospace; }}
+.runway-detail {{ display: block; font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }}
+.sector-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px; }}
+.method {{ background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 40px; font-size: 13px; color: var(--text-secondary); line-height: 1.7; }}
+.method h3 {{ color: var(--text-primary); font-size: 14px; margin-bottom: 8px; }}
+.method code {{ font-family: 'JetBrains Mono', monospace; color: var(--accent-blue); font-size: 12px; }}
+.footer {{ text-align: center; padding: 24px; color: var(--text-muted); font-size: 12px; font-family: 'JetBrains Mono', monospace; border-top: 1px solid var(--border); margin-top: 40px; }}
+#searchInput {{ background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);
+    padding: 8px 14px; border-radius: 6px; font-size: 13px; width: 100%; margin-bottom: 16px;
+    font-family: 'JetBrains Mono', monospace; outline: none; }}
+#searchInput:focus {{ border-color: var(--accent-blue); }}
+#sectorFilter {{ background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);
+    padding: 8px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 16px; margin-left: 12px;
+    font-family: 'JetBrains Mono', monospace; outline: none; cursor: pointer; }}
+.btn {{ background-color: var(--accent-blue); color: white; border: none; padding: 8px 16px; font-size: 14px; border-radius: 6px; cursor: pointer; font-family: 'JetBrains Mono', monospace; font-weight: 600; }}
+.btn:hover {{ background-color: #2563eb; }}
+.btn:disabled {{ background-color: #1e3a8a; cursor: not-allowed; }}
+#statusMsg {{ font-size: 12px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-left: 10px; }}
+</style>
+</head>
+<body>
+<div class="noise"></div>
+<div class="container">
+
+<div class="header">
+    <div class="header-left">
+        <h1>NQL S&amp;P 500 MOMENTUM SCANNER</h1>
+        <div class="subtitle">Per-aktie optimal lookback × hållperiod | {len(df)} aktier scannerade</div>
+    </div>
+    <div class="header-right">
+        <div class="scan-date">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+        <div class="regime-badge">{regime.replace('_',' ')}</div>
+        <div class="vix-info">VIX {current_vix:.1f} | 20d snitt {vix_sma:.1f}</div>
+    </div>
+</div>
+
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="label">BUY-signaler</div>
+        <div class="value" style="color:var(--accent-green)">{len(buys)}</div>
+        <div class="sub">{len(strong_buys)} strong buy</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Hold/Avoid</div>
+        <div class="value" style="color:var(--accent-red)">{len(df)-len(buys)}</div>
+        <div class="sub">av {len(df)} totalt</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Top {TOP_N} Snitt Score</div>
+        <div class="value">{top_n['Score'].mean():.0f}</div>
+        <div class="sub">komposit score</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Top {TOP_N} Snitt Mom</div>
+        <div class="value" style="color:var(--accent-green)">{top_n['Mom_Pct'].mean():+.1f}%</div>
+        <div class="sub">optimal lookback</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Aktier scannerade</div>
+        <div class="value">{len(df)}</div>
+        <div class="sub">S&amp;P 500</div>
+    </div>
+</div>
+
+<div class="section-title">
+    <div>TOP {TOP_N} — STARKASTE KÖP-SIGNALER</div>
+    <div>
+        <button id="updateBtn" class="btn" onclick="startUpdate()">Uppdatera Data</button>
+        <span id="statusMsg"></span>
+    </div>
+</div>
+<div class="top10-table">
+<table>
+<thead>
+    <tr>
+        <th>Rank</th><th>Aktie</th><th>Pris</th><th>Score</th><th>Signal</th>
+        <th>Momentum (opt. LB)</th><th>MTF ●</th><th>Trendphase</th><th>Vol 20d</th><th>Hold</th><th>Vikt</th>
+    </tr>
+</thead>
+<tbody>{top_rows}</tbody>
+</table>
+</div>
+
+<div class="sector-grid">
+<div>
+<div class="section-title">SEKTORFÖRDELNING (BUY-signaler)</div>
+<div class="sector-table">
+<table>
+<thead><tr><th>Sektor</th><th style="text-align:center">Antal</th><th style="text-align:right">Avg Score</th><th style="text-align:right">Avg Mom%</th></tr></thead>
+<tbody>{sector_rows}</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<div class="section-title">FULL RANKING — ALLA {len(df)} AKTIER</div>
+<div>
+    <input type="text" id="searchInput" placeholder="Sök ticker eller namn..." oninput="filterTable()">
+    <select id="sectorFilter" onchange="filterTable()">
+        <option value="">Alla sektorer</option>
+        {''.join(f'<option value="{s}">{s}</option>' for s in sorted(df["Sector"].unique()))}
+    </select>
+</div>
+<div class="full-table">
+<table id="fullTable">
+<thead>
+    <tr><th>#</th><th>Aktie</th><th>Sektor</th><th>Score</th><th>Mom%</th><th>Conf</th><th>Trend</th><th>Vol%</th><th>High%</th><th>Signal</th></tr>
+</thead>
+<tbody>{all_rows}</tbody>
+</table>
+</div>
+
+<div class="method">
+    <h3>Metodologi</h3>
+    Per-aktie optimal lookback bestäms genom att maximera Sharpe ratio över alla (lookback × hållperiod)
+    kombinationer på historisk månadsdata. Köpsignal ges när den aktie-specifika optimala lookback-returnen &gt; 0.
+    Komposit score: <code>30% primärt momentum + 20% trendrunway + 15% MTF-bekräftelse +
+    10% trendlutning + 10% historisk Sharpe + 10% avstånd från 200d-topp + 5% volym</code>.
+    VIX-regime justerar scores ×{regime_adj:.1f}. Positionsstorlek: invers volatilit, max 10% per aktie.
+    MTF-punkter visar momentumtecken för 1m/3m/6m/12m (grön=positiv, röd=negativ).
+</div>
+
+<div class="footer">
+    Nordic Quant Lab — NQL S&amp;P 500 Scanner v1.0 — {datetime.now().strftime('%Y-%m-%d')}<br>
+    Detta är inte investeringsrådgivning. Historisk avkastning garanterar inte framtida resultat.
+</div>
+
+</div>
+
+<script>
+function filterTable() {{
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const sector = document.getElementById('sectorFilter').value.toLowerCase();
+    const rows = document.querySelectorAll('#fullTable tbody tr');
+    rows.forEach(row => {{
+        const text = row.textContent.toLowerCase();
+        const matchSearch = !search || text.includes(search);
+        const matchSector = !sector || text.includes(sector);
+        row.style.display = matchSearch && matchSector ? '' : 'none';
+    }});
+}}
+
+function startUpdate() {{
+    const btn = document.getElementById('updateBtn');
+    const statusMsg = document.getElementById('statusMsg');
+    btn.disabled = true;
+    btn.innerText = "Startar...";
+    
+    fetch('/api/update', {{method: 'POST'}})
+        .then(res => res.json())
+        .then(data => {{
+            if (data.status === 'started' || data.status === 'already_running') {{
+                pollStatus();
+            }} else {{
+                statusMsg.innerText = "Fel vid start.";
+                btn.disabled = false;
+                btn.innerText = "Uppdatera Data";
+            }}
+        }})
+        .catch(() => {{
+            statusMsg.innerText = "Kan inte nå servern.";
+            btn.disabled = false;
+            btn.innerText = "Uppdatera Data";
+        }});
+}}
+
+function pollStatus() {{
+    const btn = document.getElementById('updateBtn');
+    const statusMsg = document.getElementById('statusMsg');
+    
+    fetch('/api/status')
+        .then(res => res.json())
+        .then(data => {{
+            if (data.is_running) {{
+                btn.innerText = "Uppdaterar...";
+                statusMsg.innerText = data.message || "Arbetar...";
+                setTimeout(pollStatus, 3000);
+            }} else {{
+                btn.innerText = "Uppdatera Data";
+                btn.disabled = false;
+                statusMsg.innerText = "Uppdatering klar. Sidan laddas om...";
+                setTimeout(() => location.reload(), 2000);
+            }}
+        }});
+}}
+
+document.addEventListener("DOMContentLoaded", () => {{
+    fetch('/api/status')
+        .then(res => res.json())
+        .then(data => {{
+            if (data.is_running) {{
+                document.getElementById('updateBtn').disabled = true;
+                pollStatus();
+            }}
+        }});
+}});
+</script>
+
+</body>
+</html>"""
+        
+        with open(os.path.join(output_dir, 'sp500_scanner_dashboard.html'), 'w', encoding='utf-8') as f:
+            f.write(html)
+            
+        set_status("Klar!", running=False)
+        
+    except Exception as e:
+        import traceback
+        set_status(f"Fel: {str(e)}", running=False)
+        traceback.print_exc()
+
+def scan_in_background():
+    thread = threading.Thread(target=run_scan)
+    thread.daemon = True
+    thread.start()
