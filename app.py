@@ -10,11 +10,11 @@ def serve_dashboard():
     if not os.path.exists('sp500_scanner_dashboard.html'):
         return """
         <html>
-            <head><title>NQL S&P 500 Scanner</title></head>
+            <head><title>S&P 500 Scanner</title></head>
             <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-                <h1>Ingen dashboard har genererats ännu.</h1>
-                <p>Tryck på knappen nedan för att starta första hämtningen och optimeringen (detta kan ta 10-20 minuter).</p>
-                <button onclick="start()" style="padding: 10px 20px; font-size: 16px;">Starta Scanning</button>
+                <h1>No dashboard has been generated yet.</h1>
+                <p>Click the button below to start the initial fetch and optimization (this can take 10-20 minutes).</p>
+                <button onclick="start()" style="padding: 10px 20px; font-size: 16px;">Start Scanning</button>
                 <p id="msg" style="margin-top: 20px; color: #555;"></p>
                 
                 <script>
@@ -28,7 +28,7 @@ def serve_dashboard():
                     fetch('/api/status')
                         .then(res => res.json())
                         .then(data => {
-                            document.getElementById('msg').innerText = data.message || "Arbetar...";
+                            document.getElementById('msg').innerText = data.message || "Working...";
                             if (data.is_running) {
                                 setTimeout(poll, 1000);
                             } else {
@@ -52,7 +52,7 @@ def serve_dashboard():
 def update_data():
     if not SCAN_STATUS["is_running"]:
         SCAN_STATUS["is_running"] = True
-        SCAN_STATUS["message"] = "Startar background task..."
+        SCAN_STATUS["message"] = "Starting background task..."
         scan_in_background()
         return jsonify({"status": "started"})
     return jsonify({"status": "already_running"})

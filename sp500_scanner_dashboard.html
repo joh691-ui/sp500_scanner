@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NQL S&amp;P 500 Scanner — 2026-03-02</title>
+<title>S&amp;P 500 Scanner — 2026-03-02</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -103,48 +103,48 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
 
 <div class="header">
     <div class="header-left">
-        <h1>NQL S&amp;P 500 MOMENTUM SCANNER</h1>
-        <div class="subtitle">Per-aktie optimal lookback × hållperiod | 502 aktier scannerade</div>
+        <h1>S&amp;P 500 MOMENTUM SCANNER</h1>
+        <div class="subtitle">Per-stock optimal lookback × hold period | 502 stocks scanned</div>
     </div>
     <div class="header-right">
         <div class="scan-date">2026-03-02 10:39</div>
         <div class="regime-badge">ELEVATED</div>
-        <div class="vix-info">VIX 23.4 | 20d snitt 19.4</div>
+        <div class="vix-info">VIX 23.4 | 20d avg 19.4</div>
     </div>
 </div>
 
 <div class="stats-bar">
     <div class="stat-card">
-        <div class="label">BUY-signaler</div>
+        <div class="label">BUY Signals</div>
         <div class="value" style="color:var(--accent-green)">239</div>
         <div class="sub">185 strong buy</div>
     </div>
     <div class="stat-card">
         <div class="label">Hold/Avoid</div>
         <div class="value" style="color:var(--accent-red)">263</div>
-        <div class="sub">av 502 totalt</div>
+        <div class="sub">out of 502 total</div>
     </div>
     <div class="stat-card">
-        <div class="label">Top 25 Snitt Score</div>
+        <div class="label">Top 25 Avg Score</div>
         <div class="value">68</div>
-        <div class="sub">komposit score</div>
+        <div class="sub">composite score</div>
     </div>
     <div class="stat-card">
-        <div class="label">Top 25 Snitt Mom</div>
+        <div class="label">Top 25 Avg Mom</div>
         <div class="value" style="color:var(--accent-green)">+70.4%</div>
         <div class="sub">optimal lookback</div>
     </div>
     <div class="stat-card">
-        <div class="label">Aktier scannerade</div>
+        <div class="label">Stocks scanned</div>
         <div class="value">502</div>
         <div class="sub">S&amp;P 500</div>
     </div>
 </div>
 
 <div class="section-title">
-    <div>TOP 25 — STARKASTE KÖP-SIGNALER</div>
+    <div>TOP 25 — STRONGEST BUY SIGNALS</div>
     <div>
-        <button id="updateBtn" class="btn" onclick="startUpdate()">Uppdatera Data</button>
+        <button id="updateBtn" class="btn" onclick="startUpdate()">Update Data</button>
         <span id="statusMsg"></span>
     </div>
 </div>
@@ -152,8 +152,8 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
 <table>
 <thead>
     <tr>
-        <th>Rank</th><th>Aktie</th><th>Pris</th><th>Score</th><th>Signal</th>
-        <th>Momentum (opt. LB)</th><th>MTF ●</th><th>Trendphase</th><th>Vol 20d</th><th>Hold</th><th>Vikt</th>
+        <th>Rank</th><th>Ticker</th><th>Price</th><th>Score</th><th>Signal</th>
+        <th>Momentum (opt. LB)</th><th>MTF ●</th><th>Trend Phase</th><th>Vol 20d</th><th>Hold</th><th>Weight</th>
     </tr>
 </thead>
 <tbody>
@@ -173,7 +173,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +17.0%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +36.2%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +42.2%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +22.8%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">2m → 10m kvar</span>
+            <span class="runway-detail">2m → 10m left</span>
         </td>
         <td class="vol">24.8%</td>
         <td class="hold">12m</td>
@@ -195,7 +195,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +17.6%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +50.8%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +36.2%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +17.0%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">3m → 9m kvar</span>
+            <span class="runway-detail">3m → 9m left</span>
         </td>
         <td class="vol">57.7%</td>
         <td class="hold">12m</td>
@@ -217,7 +217,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +6.6%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +46.0%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +43.8%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +29.3%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">2m → 9m kvar</span>
+            <span class="runway-detail">2m → 9m left</span>
         </td>
         <td class="vol">30.6%</td>
         <td class="hold">11m</td>
@@ -239,7 +239,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +14.0%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +34.9%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +62.9%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +48.5%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">4m → 7m kvar</span>
+            <span class="runway-detail">4m → 7m left</span>
         </td>
         <td class="vol">39.5%</td>
         <td class="hold">11m</td>
@@ -261,7 +261,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +48.4%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +82.6%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +71.2%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +16.7%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">2m → 10m kvar</span>
+            <span class="runway-detail">2m → 10m left</span>
         </td>
         <td class="vol">57.7%</td>
         <td class="hold">12m</td>
@@ -283,7 +283,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +14.3%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +114.2%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +118.9%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +72.3%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">5m → 7m kvar</span>
+            <span class="runway-detail">5m → 7m left</span>
         </td>
         <td class="vol">54.1%</td>
         <td class="hold">12m</td>
@@ -305,7 +305,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +3.0%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +20.1%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +15.8%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +40.8%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">3m → 9m kvar</span>
+            <span class="runway-detail">3m → 9m left</span>
         </td>
         <td class="vol">26.7%</td>
         <td class="hold">12m</td>
@@ -327,7 +327,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +32.6%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +51.4%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +20.6%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +65.4%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">1m → 10m kvar</span>
+            <span class="runway-detail">1m → 10m left</span>
         </td>
         <td class="vol">73.5%</td>
         <td class="hold">11m</td>
@@ -349,7 +349,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +9.3%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +33.8%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +36.6%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +43.2%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">3m → 9m kvar</span>
+            <span class="runway-detail">3m → 9m left</span>
         </td>
         <td class="vol">32.2%</td>
         <td class="hold">12m</td>
@@ -371,7 +371,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +14.3%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +19.4%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +51.6%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +41.8%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">5m → 5m kvar</span>
+            <span class="runway-detail">5m → 5m left</span>
         </td>
         <td class="vol">28.0%</td>
         <td class="hold">10m</td>
@@ -393,7 +393,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +7.8%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +40.5%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +61.3%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +42.0%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">5m → 5m kvar</span>
+            <span class="runway-detail">5m → 5m left</span>
         </td>
         <td class="vol">30.1%</td>
         <td class="hold">10m</td>
@@ -415,7 +415,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +12.8%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +18.0%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +37.1%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +62.5%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">7m → 5m kvar</span>
+            <span class="runway-detail">7m → 5m left</span>
         </td>
         <td class="vol">36.0%</td>
         <td class="hold">12m</td>
@@ -437,7 +437,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +11.6%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +38.4%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +41.0%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +61.6%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">9m → 3m kvar</span>
+            <span class="runway-detail">9m → 3m left</span>
         </td>
         <td class="vol">27.2%</td>
         <td class="hold">12m</td>
@@ -459,7 +459,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +9.8%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +3.1%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +30.5%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +66.3%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">7m → 5m kvar</span>
+            <span class="runway-detail">7m → 5m left</span>
         </td>
         <td class="vol">33.0%</td>
         <td class="hold">12m</td>
@@ -481,7 +481,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +3.9%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +14.9%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +11.9%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +53.4%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">7m → 5m kvar</span>
+            <span class="runway-detail">7m → 5m left</span>
         </td>
         <td class="vol">21.3%</td>
         <td class="hold">12m</td>
@@ -503,7 +503,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +16.5%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +22.3%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +46.0%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +117.4%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b40">LATE</span>
-            <span class="runway-detail">11m → 1m kvar</span>
+            <span class="runway-detail">11m → 1m left</span>
         </td>
         <td class="vol">43.4%</td>
         <td class="hold">12m</td>
@@ -525,7 +525,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +5.4%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +25.8%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +44.4%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +69.8%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">6m → 6m kvar</span>
+            <span class="runway-detail">6m → 6m left</span>
         </td>
         <td class="vol">23.7%</td>
         <td class="hold">12m</td>
@@ -547,7 +547,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +2.5%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +22.0%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +27.6%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +22.6%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">3m → 9m kvar</span>
+            <span class="runway-detail">3m → 9m left</span>
         </td>
         <td class="vol">25.3%</td>
         <td class="hold">12m</td>
@@ -569,7 +569,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +11.2%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +31.3%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +17.2%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +20.5%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">2m → 9m kvar</span>
+            <span class="runway-detail">2m → 9m left</span>
         </td>
         <td class="vol">29.3%</td>
         <td class="hold">11m</td>
@@ -591,7 +591,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +39.0%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +56.6%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +84.5%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +94.3%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b40">LATE</span>
-            <span class="runway-detail">10m → 2m kvar</span>
+            <span class="runway-detail">10m → 2m left</span>
         </td>
         <td class="vol">84.9%</td>
         <td class="hold">12m</td>
@@ -613,7 +613,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +27.1%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +78.5%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +172.1%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +195.2%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">7m → 5m kvar</span>
+            <span class="runway-detail">7m → 5m left</span>
         </td>
         <td class="vol">77.4%</td>
         <td class="hold">12m</td>
@@ -635,7 +635,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#ef4444" title="1m: -3.4%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +23.8%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +33.6%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +89.1%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">5m → 7m kvar</span>
+            <span class="runway-detail">5m → 7m left</span>
         </td>
         <td class="vol">52.3%</td>
         <td class="hold">12m</td>
@@ -657,7 +657,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +11.7%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +29.8%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +71.7%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +121.5%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#f59e0b18;color:#f59e0b;border:1px solid #f59e0b40">LATE</span>
-            <span class="runway-detail">10m → 2m kvar</span>
+            <span class="runway-detail">10m → 2m left</span>
         </td>
         <td class="vol">40.9%</td>
         <td class="hold">12m</td>
@@ -679,7 +679,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +18.6%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +30.5%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +25.3%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +9.5%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#22c55e18;color:#22c55e;border:1px solid #22c55e40">EARLY</span>
-            <span class="runway-detail">2m → 10m kvar</span>
+            <span class="runway-detail">2m → 10m left</span>
         </td>
         <td class="vol">44.6%</td>
         <td class="hold">12m</td>
@@ -701,7 +701,7 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
         <td class="mtf"><span class="mtf-dot" style="background:#22c55e" title="1m: +14.0%"></span><span class="mtf-dot" style="background:#22c55e" title="3m: +13.4%"></span><span class="mtf-dot" style="background:#22c55e" title="6m: +37.8%"></span><span class="mtf-dot" style="background:#22c55e" title="12m: +30.9%"></span></td>
         <td class="trend-phase">
             <span class="phase-badge" style="background:#3b82f618;color:#3b82f6;border:1px solid #3b82f640">MID</span>
-            <span class="runway-detail">4m → 8m kvar</span>
+            <span class="runway-detail">4m → 8m left</span>
         </td>
         <td class="vol">38.7%</td>
         <td class="hold">12m</td>
@@ -712,10 +712,10 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
 
 <div class="sector-grid">
 <div>
-<div class="section-title">SEKTORFÖRDELNING (BUY-signaler)</div>
+<div class="section-title">SECTOR DISTRIBUTION (BUY Signals)</div>
 <div class="sector-table">
 <table>
-<thead><tr><th>Sektor</th><th style="text-align:center">Antal</th><th style="text-align:right">Avg Score</th><th style="text-align:right">Avg Mom%</th></tr></thead>
+<thead><tr><th>Sector</th><th style="text-align:center">Count</th><th style="text-align:right">Avg Score</th><th style="text-align:right">Avg Mom%</th></tr></thead>
 <tbody>
     <tr>
         <td><span style="color:#8b5cf6;font-weight:600">Industrials</span></td>
@@ -788,18 +788,18 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
 </div>
 </div>
 
-<div class="section-title">FULL RANKING — ALLA 502 AKTIER</div>
+<div class="section-title">FULL RANKING — ALL 502 STOCKS</div>
 <div>
-    <input type="text" id="searchInput" placeholder="Sök ticker eller namn..." oninput="filterTable()">
+    <input type="text" id="searchInput" placeholder="Search ticker or name..." oninput="filterTable()">
     <select id="sectorFilter" onchange="filterTable()">
-        <option value="">Alla sektorer</option>
+        <option value="">All sectors</option>
         <option value="Communication Services">Communication Services</option><option value="Consumer Discretionary">Consumer Discretionary</option><option value="Consumer Staples">Consumer Staples</option><option value="Energy">Energy</option><option value="Financials">Financials</option><option value="Health Care">Health Care</option><option value="Industrials">Industrials</option><option value="Information Technology">Information Technology</option><option value="Materials">Materials</option><option value="Real Estate">Real Estate</option><option value="Utilities">Utilities</option>
     </select>
 </div>
 <div class="full-table">
 <table id="fullTable">
 <thead>
-    <tr><th>#</th><th>Aktie</th><th>Sektor</th><th>Score</th><th>Mom%</th><th>Conf</th><th>Trend</th><th>Vol%</th><th>High%</th><th>Signal</th></tr>
+    <tr><th>#</th><th>Ticker</th><th>Sector</th><th>Score</th><th>Mom%</th><th>Conf</th><th>Trend</th><th>Vol%</th><th>High%</th><th>Signal</th></tr>
 </thead>
 <tbody>
     <tr class="full-row strong-buy">
@@ -6830,18 +6830,18 @@ td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border)
 </div>
 
 <div class="method">
-    <h3>Metodologi</h3>
-    Per-aktie optimal lookback bestäms genom att maximera Sharpe ratio över alla (lookback × hållperiod)
-    kombinationer på historisk månadsdata. Köpsignal ges när den aktie-specifika optimala lookback-returnen &gt; 0.
-    Komposit score: <code>30% primärt momentum + 20% trendrunway + 15% MTF-bekräftelse +
-    10% trendlutning + 10% historisk Sharpe + 10% avstånd från 200d-topp + 5% volym</code>.
-    VIX-regime justerar scores ×0.8. Positionsstorlek: invers volatilit, max 10% per aktie.
-    MTF-punkter visar momentumtecken för 1m/3m/6m/12m (grön=positiv, röd=negativ).
+    <h3>Methodology</h3>
+    Per-stock optimal lookback is determined by maximizing the Sharpe ratio across all (lookback × hold period)
+    combinations on historical monthly data. A buy signal is generated when the stock-specific optimal lookback return &gt; 0.
+    Composite score: <code>30% primary momentum + 20% trend runway + 15% MTF confirmation +
+    10% trend slope + 10% historical Sharpe + 10% distance from 200d high + 5% volume</code>.
+    VIX regime adjusts scores ×0.8. Position sizing: inverse volatility, max 10% per stock.
+    MTF dots show momentum for 1m/3m/6m/12m (green=positive, red=negative).
 </div>
 
 <div class="footer">
-    Nordic Quant Lab — NQL S&amp;P 500 Scanner v1.0 — 2026-03-02<br>
-    Detta är inte investeringsrådgivning. Historisk avkastning garanterar inte framtida resultat.
+    S&amp;P 500 Scanner v1.0 — 2026-03-02<br>
+    This is not investment advice. Historical performance does not guarantee future results.
 </div>
 
 </div>
@@ -6866,7 +6866,7 @@ function startUpdate() {
     const btn = document.getElementById('updateBtn');
     const statusMsg = document.getElementById('statusMsg');
     btn.disabled = true;
-    btn.innerText = "Startar...";
+    btn.innerText = "Starting...";
     
     fetch('/api/update', {method: 'POST'})
         .then(res => res.json())
@@ -6874,15 +6874,15 @@ function startUpdate() {
             if (data.status === 'started' || data.status === 'already_running') {
                 pollStatus();
             } else {
-                statusMsg.innerText = "Fel vid start.";
+                statusMsg.innerText = "Error starting.";
                 btn.disabled = false;
-                btn.innerText = "Uppdatera Data";
+                btn.innerText = "Update Data";
             }
         })
         .catch(() => {
-            statusMsg.innerText = "Kan inte nå servern.";
+            statusMsg.innerText = "Cannot reach server.";
             btn.disabled = false;
-            btn.innerText = "Uppdatera Data";
+            btn.innerText = "Update Data";
         });
 }
 
@@ -6894,13 +6894,13 @@ function pollStatus() {
         .then(res => res.json())
         .then(data => {
             if (data.is_running) {
-                btn.innerText = "Uppdaterar...";
-                statusMsg.innerText = data.message || "Arbetar...";
+                btn.innerText = "Updating...";
+                statusMsg.innerText = data.message || "Working...";
                 setTimeout(pollStatus, 1000);
             } else {
-                btn.innerText = "Uppdatera Data";
+                btn.innerText = "Update Data";
                 btn.disabled = false;
-                statusMsg.innerText = "Uppdatering klar. Sidan laddas om...";
+                statusMsg.innerText = "Update complete. Reloading page...";
                 setTimeout(() => location.reload(), 2000);
             }
         });

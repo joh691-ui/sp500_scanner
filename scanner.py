@@ -28,7 +28,7 @@ SLOPE_CAP_ANN = 400.0
 # Global State for Status Polling
 SCAN_STATUS = {
     "is_running": False,
-    "message": "Väntar på start..."
+    "message": "Waiting to start..."
 }
 
 def set_status(msg, running=True):
@@ -68,7 +68,7 @@ def run_scan(output_dir="."):
     global SCAN_STATUS
     
     try:
-        set_status("Hämtar S&P 500-komponenter från Wikipedia...")
+        set_status("Fetching S&P 500 components from Wikipedia...")
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
         resp = requests.get(url, headers=headers, timeout=15)
@@ -86,7 +86,7 @@ def run_scan(output_dir="."):
         STOCK_NAMES = dict(zip(sp500_table['yf_ticker'], sp500_table[name_col]))
         STOCK_SECTORS = dict(zip(sp500_table['yf_ticker'], sp500_table[sector_col]))
         
-        set_status(f"Hittade {len(TICKERS)} aktier. Bestämmer tidsram...")
+        set_status(f"Found {len(TICKERS)} stocks. Determining timeframe...")
         
         lookback_days = max(LOOKBACK_CANDIDATES) * TRADING_DAYS_PER_MONTH
         opt_start = (datetime.now() - timedelta(days=252*11)).strftime('%Y-%m-%d')
@@ -94,7 +94,7 @@ def run_scan(output_dir="."):
         
         download_start = recent_start if FAST_MODE else opt_start
         
-        set_status(f"Laddar ner prisdata från {download_start} (tar lite tid)...")
+        set_status(f"Downloading price data since {download_start} (this takes a while)...")
         
         BATCH_SIZE = 100
         all_prices = []
@@ -102,7 +102,7 @@ def run_scan(output_dir="."):
         
         for i in range(0, len(TICKERS), BATCH_SIZE):
             batch = TICKERS[i:i+BATCH_SIZE]
-            set_status(f"Laddar ner prisdata: Batch {i//BATCH_SIZE + 1}/{(len(TICKERS)-1)//BATCH_SIZE + 1}")
+            set_status(f"Downloading price data: Batch {i//BATCH_SIZE + 1}/{(len(TICKERS)-1)//BATCH_SIZE + 1}")
             raw = yf.download(batch, start=download_start, auto_adjust=True, threads=True, progress=False)
             if isinstance(raw.columns, pd.MultiIndex):
                 p = raw['Close'].copy()
@@ -128,7 +128,7 @@ def run_scan(output_dir="."):
         prices = prices.loc[:, ~prices.columns.duplicated()].dropna(how='all')
         volumes = volumes.loc[:, ~volumes.columns.duplicated()].dropna(how='all')
         
-        set_status("Hämtar VIX data...")
+        set_status("Fetching VIX data...")
         try:
             vix_raw = yf.download("^VIX", start=recent_start, auto_adjust=True, progress=False)['Close']
             current_vix = float(vix_raw.iloc[-1].iloc[0]) if hasattr(vix_raw.iloc[-1], 'iloc') else float(vix_raw.iloc[-1])
@@ -140,30 +140,30 @@ def run_scan(output_dir="."):
             
         if current_vix < 15:
             regime = "LOW_VOL"
-            regime_label = "🟢 LÅG VOLATILITET — Favorisera aggressiva positioner"
+            regime_label = "🟢 LOW VOLATILITY — Favor aggressive positions"
             regime_adj = 1.2
         elif current_vix < 22:
             regime = "NORMAL"
-            regime_label = "🟡 NORMALT — Standard momentumsignaler tillförlitliga"
+            regime_label = "🟡 NORMAL — Standard momentum signals reliable"
             regime_adj = 1.0
         elif current_vix < 30:
             regime = "ELEVATED"
-            regime_label = "🟠 FÖRHÖJD VOL — Föredra kvalitetsmomentum, minska positioner"
+            regime_label = "🟠 ELEVATED VOL — Prefer quality momentum, reduce positions"
             regime_adj = 0.8
         else:
             regime = "CRISIS"
-            regime_label = "🔴 KRIS-VOLATILITET — Minimera equity-exponering"
+            regime_label = "🔴 CRISIS VOLATILITY — Minimize equity exposure"
             regime_adj = 0.5
 
         if FAST_MODE:
             OPTIMAL_PARAMS = {t: (FAST_LOOKBACK, FAST_HOLD, np.nan) for t in TICKERS if t in prices.columns}
         else:
-            set_status("Optimerar (lookback × hold) per aktie...")
+            set_status("Optimizing (lookback × hold) per stock...")
             OPTIMAL_PARAMS = {}
             valid_tickers = [t for t in TICKERS if t in prices.columns]
             for i, ticker in enumerate(valid_tickers):
                 if i % 50 == 0:
-                    set_status(f"Optimerar: {i}/{len(valid_tickers)} klara...")
+                    set_status(f"Optimizing: {i}/{len(valid_tickers)} done...")
                 series = prices[ticker].dropna()
                 if len(series) < MIN_HISTORY_DAYS:
                     OPTIMAL_PARAMS[ticker] = (6, 6, np.nan)
@@ -180,7 +180,7 @@ def run_scan(output_dir="."):
             ])
             opt_df.to_csv(os.path.join(output_dir, 'sp500_optimal_params.csv'), index=False)
 
-        set_status("Beräknar momentumsignaler...")
+        set_status("Calculating momentum signals...")
         results = []
         for ticker, (opt_lb, opt_hold, hist_sharpe) in OPTIMAL_PARAMS.items():
             if ticker not in prices.columns:
@@ -367,7 +367,7 @@ def run_scan(output_dir="."):
         top_n = pd.DataFrame(selected).reset_index(drop=True)
         df.to_csv(os.path.join(output_dir, 'sp500_scanner_results.csv'), index=False)
         
-        set_status("Genererar HTML-dashboard...")
+        set_status("Generating HTML dashboard...")
         
         SECTOR_COLORS = {
             'Information Technology': '#3b82f6',
@@ -398,7 +398,7 @@ def run_scan(output_dir="."):
             norm_w = row['Pos_Size'] / total_weight * 100 if total_weight > 0 else 0
             phase_colors = {"EARLY": "#22c55e", "MID": "#3b82f6", "LATE": "#f59e0b", "OVER": "#ef4444"}
             phase_color = phase_colors.get(row['Trend_Phase'], "#6b7280")
-            runway_text = f"{int(row['Trend_Age'])}m → {int(row['Runway'])}m kvar"
+            runway_text = f"{int(row['Trend_Age'])}m → {int(row['Runway'])}m left"
             sector_color = SECTOR_COLORS.get(row['Sector'], '#6b7280')
             
             top_rows += f"""
@@ -450,16 +450,16 @@ def run_scan(output_dir="."):
             
         sector_rows = ""
         buy_sectors_sorted = buys.groupby('Sector').agg(
-            Antal=('Ticker', 'count'),
+            Count=('Ticker', 'count'),
             Avg_Score=('Score', 'mean'),
             Avg_Mom=('Mom_Pct', 'mean')
-        ).sort_values('Antal', ascending=False).reset_index()
+        ).sort_values('Count', ascending=False).reset_index()
         for _, row in buy_sectors_sorted.iterrows():
             sc = SECTOR_COLORS.get(row['Sector'], '#6b7280')
             sector_rows += f"""
             <tr>
                 <td><span style="color:{sc};font-weight:600">{row['Sector']}</span></td>
-                <td style="text-align:center">{int(row['Antal'])}</td>
+                <td style="text-align:center">{int(row['Count'])}</td>
                 <td style="text-align:right">{row['Avg_Score']:.1f}</td>
                 <td style="text-align:right;color:{'#22c55e' if row['Avg_Mom']>0 else '#ef4444'}">{row['Avg_Mom']:+.1f}%</td>
             </tr>"""
@@ -472,7 +472,7 @@ def run_scan(output_dir="."):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NQL S&amp;P 500 Scanner — {datetime.now().strftime('%Y-%m-%d')}</title>
+<title>S&amp;P 500 Scanner — {datetime.now().strftime('%Y-%m-%d')}</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {{
@@ -558,48 +558,48 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 
 <div class="header">
     <div class="header-left">
-        <h1>NQL S&amp;P 500 MOMENTUM SCANNER</h1>
-        <div class="subtitle">Per-aktie optimal lookback × hållperiod | {len(df)} aktier scannerade</div>
+        <h1>S&amp;P 500 MOMENTUM SCANNER</h1>
+        <div class="subtitle">Per-stock optimal lookback × hold period | {len(df)} stocks scanned</div>
     </div>
     <div class="header-right">
         <div class="scan-date">{datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
         <div class="regime-badge">{regime.replace('_',' ')}</div>
-        <div class="vix-info">VIX {current_vix:.1f} | 20d snitt {vix_sma:.1f}</div>
+        <div class="vix-info">VIX {current_vix:.1f} | 20d avg {vix_sma:.1f}</div>
     </div>
 </div>
 
 <div class="stats-bar">
     <div class="stat-card">
-        <div class="label">BUY-signaler</div>
+        <div class="label">BUY Signals</div>
         <div class="value" style="color:var(--accent-green)">{len(buys)}</div>
         <div class="sub">{len(strong_buys)} strong buy</div>
     </div>
     <div class="stat-card">
         <div class="label">Hold/Avoid</div>
         <div class="value" style="color:var(--accent-red)">{len(df)-len(buys)}</div>
-        <div class="sub">av {len(df)} totalt</div>
+        <div class="sub">out of {len(df)} total</div>
     </div>
     <div class="stat-card">
-        <div class="label">Top {TOP_N} Snitt Score</div>
+        <div class="label">Top {TOP_N} Avg Score</div>
         <div class="value">{top_n['Score'].mean():.0f}</div>
-        <div class="sub">komposit score</div>
+        <div class="sub">composite score</div>
     </div>
     <div class="stat-card">
-        <div class="label">Top {TOP_N} Snitt Mom</div>
+        <div class="label">Top {TOP_N} Avg Mom</div>
         <div class="value" style="color:var(--accent-green)">{top_n['Mom_Pct'].mean():+.1f}%</div>
         <div class="sub">optimal lookback</div>
     </div>
     <div class="stat-card">
-        <div class="label">Aktier scannerade</div>
+        <div class="label">Stocks scanned</div>
         <div class="value">{len(df)}</div>
         <div class="sub">S&amp;P 500</div>
     </div>
 </div>
 
 <div class="section-title">
-    <div>TOP {TOP_N} — STARKASTE KÖP-SIGNALER</div>
+    <div>TOP {TOP_N} — STRONGEST BUY SIGNALS</div>
     <div>
-        <button id="updateBtn" class="btn" onclick="startUpdate()">Uppdatera Data</button>
+        <button id="updateBtn" class="btn" onclick="startUpdate()">Update Data</button>
         <span id="statusMsg"></span>
     </div>
 </div>
@@ -607,8 +607,8 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 <table>
 <thead>
     <tr>
-        <th>Rank</th><th>Aktie</th><th>Pris</th><th>Score</th><th>Signal</th>
-        <th>Momentum (opt. LB)</th><th>MTF ●</th><th>Trendphase</th><th>Vol 20d</th><th>Hold</th><th>Vikt</th>
+        <th>Rank</th><th>Ticker</th><th>Price</th><th>Score</th><th>Signal</th>
+        <th>Momentum (opt. LB)</th><th>MTF ●</th><th>Trend Phase</th><th>Vol 20d</th><th>Hold</th><th>Weight</th>
     </tr>
 </thead>
 <tbody>{top_rows}</tbody>
@@ -617,46 +617,46 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 
 <div class="sector-grid">
 <div>
-<div class="section-title">SEKTORFÖRDELNING (BUY-signaler)</div>
+<div class="section-title">SECTOR DISTRIBUTION (BUY Signals)</div>
 <div class="sector-table">
 <table>
-<thead><tr><th>Sektor</th><th style="text-align:center">Antal</th><th style="text-align:right">Avg Score</th><th style="text-align:right">Avg Mom%</th></tr></thead>
+<thead><tr><th>Sector</th><th style="text-align:center">Count</th><th style="text-align:right">Avg Score</th><th style="text-align:right">Avg Mom%</th></tr></thead>
 <tbody>{sector_rows}</tbody>
 </table>
 </div>
 </div>
 </div>
 
-<div class="section-title">FULL RANKING — ALLA {len(df)} AKTIER</div>
+<div class="section-title">FULL RANKING — ALL {len(df)} STOCKS</div>
 <div>
-    <input type="text" id="searchInput" placeholder="Sök ticker eller namn..." oninput="filterTable()">
+    <input type="text" id="searchInput" placeholder="Search ticker or name..." oninput="filterTable()">
     <select id="sectorFilter" onchange="filterTable()">
-        <option value="">Alla sektorer</option>
+        <option value="">All sectors</option>
         {''.join(f'<option value="{s}">{s}</option>' for s in sorted(df["Sector"].unique()))}
     </select>
 </div>
 <div class="full-table">
 <table id="fullTable">
 <thead>
-    <tr><th>#</th><th>Aktie</th><th>Sektor</th><th>Score</th><th>Mom%</th><th>Conf</th><th>Trend</th><th>Vol%</th><th>High%</th><th>Signal</th></tr>
+    <tr><th>#</th><th>Ticker</th><th>Sector</th><th>Score</th><th>Mom%</th><th>Conf</th><th>Trend</th><th>Vol%</th><th>High%</th><th>Signal</th></tr>
 </thead>
 <tbody>{all_rows}</tbody>
 </table>
 </div>
 
 <div class="method">
-    <h3>Metodologi</h3>
-    Per-aktie optimal lookback bestäms genom att maximera Sharpe ratio över alla (lookback × hållperiod)
-    kombinationer på historisk månadsdata. Köpsignal ges när den aktie-specifika optimala lookback-returnen &gt; 0.
-    Komposit score: <code>30% primärt momentum + 20% trendrunway + 15% MTF-bekräftelse +
-    10% trendlutning + 10% historisk Sharpe + 10% avstånd från 200d-topp + 5% volym</code>.
-    VIX-regime justerar scores ×{regime_adj:.1f}. Positionsstorlek: invers volatilit, max 10% per aktie.
-    MTF-punkter visar momentumtecken för 1m/3m/6m/12m (grön=positiv, röd=negativ).
+    <h3>Methodology</h3>
+    Per-stock optimal lookback is determined by maximizing the Sharpe ratio across all (lookback × hold period)
+    combinations on historical monthly data. A buy signal is generated when the stock-specific optimal lookback return &gt; 0.
+    Composite score: <code>30% primary momentum + 20% trend runway + 15% MTF confirmation +
+    10% trend slope + 10% historical Sharpe + 10% distance from 200d high + 5% volume</code>.
+    VIX regime adjusts scores ×{regime_adj:.1f}. Position sizing: inverse volatility, max 10% per stock.
+    MTF dots show momentum for 1m/3m/6m/12m (green=positive, red=negative).
 </div>
 
 <div class="footer">
-    Nordic Quant Lab — NQL S&amp;P 500 Scanner v1.0 — {datetime.now().strftime('%Y-%m-%d')}<br>
-    Detta är inte investeringsrådgivning. Historisk avkastning garanterar inte framtida resultat.
+    S&amp;P 500 Scanner v1.0 — {datetime.now().strftime('%Y-%m-%d')}<br>
+    This is not investment advice. Historical performance does not guarantee future results.
 </div>
 
 </div>
@@ -678,7 +678,7 @@ function startUpdate() {{
     const btn = document.getElementById('updateBtn');
     const statusMsg = document.getElementById('statusMsg');
     btn.disabled = true;
-    btn.innerText = "Startar...";
+    btn.innerText = "Starting...";
     
     fetch('/api/update', {{method: 'POST'}})
         .then(res => res.json())
@@ -686,15 +686,15 @@ function startUpdate() {{
             if (data.status === 'started' || data.status === 'already_running') {{
                 pollStatus();
             }} else {{
-                statusMsg.innerText = "Fel vid start.";
+                statusMsg.innerText = "Error starting.";
                 btn.disabled = false;
-                btn.innerText = "Uppdatera Data";
+                btn.innerText = "Update Data";
             }}
         }})
         .catch(() => {{
-            statusMsg.innerText = "Kan inte nå servern.";
+            statusMsg.innerText = "Cannot reach server.";
             btn.disabled = false;
-            btn.innerText = "Uppdatera Data";
+            btn.innerText = "Update Data";
         }});
 }}
 
@@ -706,13 +706,13 @@ function pollStatus() {{
         .then(res => res.json())
         .then(data => {{
             if (data.is_running) {{
-                btn.innerText = "Uppdaterar...";
-                statusMsg.innerText = data.message || "Arbetar...";
+                btn.innerText = "Updating...";
+                statusMsg.innerText = data.message || "Working...";
                 setTimeout(pollStatus, 1000);
             }} else {{
-                btn.innerText = "Uppdatera Data";
+                btn.innerText = "Update Data";
                 btn.disabled = false;
-                statusMsg.innerText = "Uppdatering klar. Sidan laddas om...";
+                statusMsg.innerText = "Update complete. Reloading page...";
                 setTimeout(() => location.reload(), 2000);
             }}
         }});
@@ -736,11 +736,11 @@ document.addEventListener("DOMContentLoaded", () => {{
         with open(os.path.join(output_dir, 'sp500_scanner_dashboard.html'), 'w', encoding='utf-8') as f:
             f.write(html)
             
-        set_status("Klar!", running=False)
+        set_status("Done!", running=False)
         
     except Exception as e:
         import traceback
-        set_status(f"Fel: {str(e)}", running=False)
+        set_status(f"Error: {str(e)}", running=False)
         traceback.print_exc()
 
 def scan_in_background():
