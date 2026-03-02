@@ -4,44 +4,58 @@ from scanner import scan_in_background, set_status, get_status
 
 app = Flask(__name__, static_folder=".")
 
+# ── Auto-start scan on boot ────────────────────────────────────────────────
+# When Render deploys/restarts, the generated HTML is gone (not in git).
+# We kick off a background scan immediately so users see fresh data ASAP.
+def _auto_start_scan():
+    status = get_status()
+    if not status.get("is_running", False):
+        set_status("Auto-starting scan on server boot...", True)
+        scan_in_background()
+
+_auto_start_scan()
+# ──────────────────────────────────────────────────────────────────────────
+
+LOADING_PAGE = """<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="5">
+  <title>S&amp;P 500 Scanner — Loading...</title>
+  <style>
+    body { background: #0a0e17; color: #e2e8f0; font-family: sans-serif;
+           display: flex; flex-direction: column; align-items: center;
+           justify-content: center; min-height: 100vh; margin: 0; }
+    h1   { font-size: 24px; margin-bottom: 12px; }
+    #msg { font-size: 14px; color: #94a3b8; font-family: monospace; margin-top: 8px; }
+    .spinner { width: 40px; height: 40px; border: 4px solid #1e293b;
+               border-top-color: #3b82f6; border-radius: 50%;
+               animation: spin 0.8s linear infinite; margin-bottom: 20px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <h1>S&amp;P 500 Scanner</h1>
+  <p>Generating dashboard for the first time&hellip;</p>
+  <p id="msg">Connecting to server…</p>
+  <script>
+    function poll() {
+      fetch('/api/status').then(r => r.json()).then(d => {
+        document.getElementById('msg').innerText = d.message || 'Working…';
+        if (!d.is_running) { location.reload(); return; }
+        setTimeout(poll, 2000);
+      }).catch(() => setTimeout(poll, 3000));
+    }
+    poll();
+  </script>
+</body>
+</html>"""
+
 @app.route('/')
 def serve_dashboard():
-    # If the file doesn't exist yet, show a simple loading/instructions page
     if not os.path.exists('sp500_scanner_dashboard.html'):
-        return """
-        <html>
-            <head><title>S&P 500 Scanner</title></head>
-            <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
-                <h1>No dashboard has been generated yet.</h1>
-                <p>Click the button below to start the initial fetch and optimization (this can take 10-20 minutes).</p>
-                <button onclick="start()" style="padding: 10px 20px; font-size: 16px;">Start Scanning</button>
-                <p id="msg" style="margin-top: 20px; color: #555;"></p>
-                
-                <script>
-                function start() {
-                    document.querySelector('button').disabled = true;
-                    fetch('/api/update', {method: 'POST'})
-                        .then(res => res.json())
-                        .then(() => poll());
-                }
-                function poll() {
-                    fetch('/api/status')
-                        .then(res => res.json())
-                        .then(data => {
-                            document.getElementById('msg').innerText = data.message || "Working...";
-                            if (data.is_running) {
-                                setTimeout(poll, 1000);
-                            } else {
-                                location.reload();
-                            }
-                        });
-                }
-                // Auto check
-                fetch('/api/status').then(r=>r.json()).then(d=>{if(d.is_running) { document.querySelector('button').disabled=true; poll();} });
-                </script>
-            </body>
-        </html>
-        """
+        return LOADING_PAGE
     response = send_from_directory('.', 'sp500_scanner_dashboard.html')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'

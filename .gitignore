@@ -5,7 +5,8 @@ __pycache__/
 .idea/
 .vscode/
 
-# Ignore generated output files unless you want them in git
-# We'll allow them so GitHub Pages could work (if you used GH pages),
-# We commit the initial files so Render can show them instantly on boot.
-
+# Generated output – these are created at runtime on the server
+sp500_scanner_dashboard.html
+sp500_scanner_results.csv
+sp500_optimal_params.csv
+status.json
