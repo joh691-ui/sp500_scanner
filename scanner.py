@@ -54,6 +54,57 @@ def set_status(msg, running=True):
         pass
     print(msg)
 
+def fetch_nasdaq_history(symbol, from_date, to_date=None, session=None):
+    if to_date is None:
+        to_date = datetime.now().strftime("%Y-%m-%d")
+        
+    s = session or requests.Session()
+    s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    
+    clean_sym = str(symbol).replace("-", ".")
+    if clean_sym in ["BF.B", "BRK.B"]:
+        return pd.DataFrame()
+        
+    url = f"https://api.nasdaq.com/api/quote/{clean_sym}/chart"
+    try:
+        resp = s.get(url, params={"assetclass": "stocks", "fromdate": from_date, "todate": to_date}, timeout=15)
+        if resp.status_code != 200:
+            return pd.DataFrame()
+        data = resp.json()
+        chart_data = data.get("data") or {}
+        points = chart_data.get("chart") or []
+        if not points:
+            return pd.DataFrame()
+            
+        def sf(val):
+            try: return float(val) if val else None
+            except: return None
+        def si(val):
+            try: return int(str(val).replace(",", "")) if val else None
+            except: return None
+            
+        records = []
+        for p in points:
+            z = p.get("z", {})
+            if z:
+                records.append({
+                    "date": z.get("dateTime"),
+                    "close": sf(z.get("close")),
+                    "volume": si(z.get("volume"))
+                })
+        df = pd.DataFrame(records)
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"], format="mixed", dayfirst=False)
+        df = df.set_index("date").sort_index()
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df.index = df.index.normalize()
+        df = df.groupby(df.index).last()
+        return df.dropna(subset=["close"])
+    except Exception as e:
+        return pd.DataFrame()
+
 def optimize_params(series, lookback_candidates, hold_candidates, tdpm):
     best_sharpe = -np.inf
     best_lb = lookback_candidates[0]
@@ -112,53 +163,47 @@ def run_scan(output_dir="."):
         
         download_start = recent_start if FAST_MODE else opt_start
         
-        set_status(f"Downloading price data since {download_start} (this takes a while)...")
+        set_status(f"Downloading price data since {download_start} using Nasdaq API (this takes ~30s)...")
         
-        BATCH_SIZE = 50
-        all_prices = []
-        all_volumes = []
+        all_prices_dict = {}
+        all_volumes_dict = {}
         
         # Setup session to avoid 403 Forbidden
         session = requests.Session()
         session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'})
         
-        for i in range(0, len(TICKERS), BATCH_SIZE):
-            batch = TICKERS[i:i+BATCH_SIZE]
-            set_status(f"Downloading price data: Batch {i//BATCH_SIZE + 1}/{(len(TICKERS)-1)//BATCH_SIZE + 1}")
-            try:
-                raw = yf.download(batch, start=download_start, auto_adjust=True, threads=False, progress=False, session=session)
-            except Exception as e:
-                set_status(f"Warning: yf.download failed for batch {i//BATCH_SIZE + 1}: {e}")
-                continue
-                
-            if isinstance(raw.columns, pd.MultiIndex):
-                p = raw['Close'].copy()
-                v = raw['Volume'].copy()
-                if isinstance(p.columns, pd.MultiIndex):
-                    p.columns = p.columns.droplevel(0)
-                if isinstance(v.columns, pd.MultiIndex):
-                    v.columns = v.columns.droplevel(0)
-            else:
-                if len(batch) == 1:
-                    p = pd.DataFrame(raw['Close'])
-                    p.columns = batch
-                    v = pd.DataFrame(raw['Volume'])
-                    v.columns = batch
-                else:
-                    p = pd.DataFrame()
-                    v = pd.DataFrame()
-            all_prices.append(p)
-            all_volumes.append(v)
-            
-        prices = pd.concat(all_prices, axis=1) if all_prices else pd.DataFrame()
-        volumes = pd.concat(all_volumes, axis=1) if all_volumes else pd.DataFrame()
-        if not prices.empty:
-            prices = prices.loc[:, ~prices.columns.duplicated()].dropna(how='all')
-        if not volumes.empty:
-            volumes = volumes.loc[:, ~volumes.columns.duplicated()].dropna(how='all')
-            
-        if prices.empty or len(prices) == 0:
-            raise ValueError(f"Failed to download price data for any ticker. Likely blocked by Yahoo Finance on this server IP.")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        def fetch_ticker(ticker):
+            df = fetch_nasdaq_history(ticker, download_start, session=session)
+            if not df.empty:
+                return ticker, df[['close']], df[['volume']]
+            return ticker, None, None
+
+        MAX_WORKERS = 10
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(fetch_ticker, t): t for t in TICKERS}
+            done_count = 0
+            for future in as_completed(futures):
+                ticker = futures[future]
+                done_count += 1
+                if done_count % 50 == 0:
+                    set_status(f"Downloading price data: {done_count}/{len(TICKERS)} completed")
+                    
+                try:
+                    t, p, v = future.result()
+                    if p is not None and not p.empty:
+                        all_prices_dict[t] = p['close']
+                        all_volumes_dict[t] = v['volume']
+                except Exception as e:
+                    pass
+        
+        prices = pd.DataFrame(all_prices_dict)
+        volumes = pd.DataFrame(all_volumes_dict)
+        
+        if prices.empty or len(prices.columns) < 50:
+            raise ValueError(f"Failed to download price data for any ticker. Likely blocked by Nasdaq API or network issue.")
+
         
         set_status("Fetching VIX data...")
         try:
