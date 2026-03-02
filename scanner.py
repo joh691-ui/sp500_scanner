@@ -257,54 +257,108 @@ def run_scan(output_dir=".", market="SP500"):
         recent_start = (datetime.now() - timedelta(days=lookback_days + 60)).strftime('%Y-%m-%d')
         download_start = recent_start if FAST_MODE else opt_start
 
-        set_status(f"Downloading price data since {download_start} using Nasdaq API...")
+        # ── Incremental Parquet cache ───────────────────────────────────────
+        CACHE_DIR = os.path.join(output_dir, "price_cache")
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        prices_cache_file  = os.path.join(CACHE_DIR, f"prices_{market}.parquet")
+        volumes_cache_file = os.path.join(CACHE_DIR, f"volumes_{market}.parquet")
 
-        all_prices_dict = {}
-        all_volumes_dict = {}
+        cached_prices  = pd.DataFrame()
+        cached_volumes = pd.DataFrame()
+        fetch_from = download_start  # full 6-year history by default
 
-        session = requests.Session()
-        session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'})
+        if os.path.exists(prices_cache_file):
+            try:
+                cached_prices  = pd.read_parquet(prices_cache_file)
+                cached_volumes = pd.read_parquet(volumes_cache_file) if os.path.exists(volumes_cache_file) else pd.DataFrame()
+                last_date = cached_prices.index.max()
+                fetch_from = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                if fetch_from >= today_str:
+                    # Cache is already up-to-date (same day), skip download
+                    set_status(f"Price cache is up-to-date ({last_date.date()}). Using cached data...")
+                    prices  = cached_prices
+                    volumes = cached_volumes
+                    fetch_from = None  # signal: no download needed
+                else:
+                    days_behind = (datetime.now() - last_date).days
+                    set_status(f"Cache loaded ({len(cached_prices)} rows, {days_behind}d old). Fetching new days since {fetch_from}...")
+            except Exception as e:
+                set_status(f"Cache unreadable ({e}), re-downloading from scratch...")
+                cached_prices  = pd.DataFrame()
+                fetch_from = download_start
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        if fetch_from is not None:
+            all_prices_dict  = {}
+            all_volumes_dict = {}
 
-        if market == "STO":
-            def fetch_ticker(ticker):
-                oid = ORDERBOOK_IDS.get(ticker)
-                if not oid:
+            session = requests.Session()
+            session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'})
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            if market == "STO":
+                def fetch_ticker(ticker):
+                    oid = ORDERBOOK_IDS.get(ticker)
+                    if not oid:
+                        return ticker, None, None
+                    df = fetch_nordic_history(oid, fetch_from, session=session)
+                    if not df.empty:
+                        return ticker, df[['close']], df[['volume']]
                     return ticker, None, None
-                df = fetch_nordic_history(oid, download_start, session=session)
-                if not df.empty:
-                    return ticker, df[['close']], df[['volume']]
-                return ticker, None, None
-        else:
-            def fetch_ticker(ticker):
-                df = fetch_nasdaq_history(ticker, download_start, session=session)
-                if not df.empty:
-                    return ticker, df[['close']], df[['volume']]
-                return ticker, None, None
+            else:
+                def fetch_ticker(ticker):
+                    df = fetch_nasdaq_history(ticker, fetch_from, session=session)
+                    if not df.empty:
+                        return ticker, df[['close']], df[['volume']]
+                    return ticker, None, None
 
-        MAX_WORKERS = 25
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {executor.submit(fetch_ticker, t): t for t in TICKERS}
-            done_count = 0
-            for future in as_completed(futures):
-                ticker = futures[future]
-                done_count += 1
-                if done_count % 50 == 0:
-                    set_status(f"Downloading price data: {done_count}/{len(TICKERS)} completed")
+            MAX_WORKERS = 25
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {executor.submit(fetch_ticker, t): t for t in TICKERS}
+                done_count = 0
+                for future in as_completed(futures):
+                    ticker = futures[future]
+                    done_count += 1
+                    if done_count % 50 == 0:
+                        set_status(f"Downloading price data: {done_count}/{len(TICKERS)} completed")
+                    try:
+                        t, p, v = future.result()
+                        if p is not None and not p.empty:
+                            all_prices_dict[t]  = p['close']
+                            all_volumes_dict[t] = v['volume']
+                    except Exception:
+                        pass
+
+            new_prices  = pd.DataFrame(all_prices_dict)
+            new_volumes = pd.DataFrame(all_volumes_dict)
+
+            # Merge with cache (if any)
+            if not cached_prices.empty and not new_prices.empty:
+                set_status("Merging new data with cache...")
+                prices  = pd.concat([cached_prices,  new_prices ]).groupby(level=0).last()
+                volumes = pd.concat([cached_volumes, new_volumes]).groupby(level=0).last() if not cached_volumes.empty else new_volumes
+            elif not new_prices.empty:
+                prices  = new_prices
+                volumes = new_volumes
+            else:
+                prices  = cached_prices
+                volumes = cached_volumes
+
+            # Save updated cache
+            if not prices.empty:
+                set_status("Saving price cache to disk...")
                 try:
-                    t, p, v = future.result()
-                    if p is not None and not p.empty:
-                        all_prices_dict[t] = p['close']
-                        all_volumes_dict[t] = v['volume']
-                except Exception:
-                    pass
-
-        prices = pd.DataFrame(all_prices_dict)
-        volumes = pd.DataFrame(all_volumes_dict)
+                    prices.to_parquet(prices_cache_file,  engine="fastparquet" if False else "auto")
+                    volumes.to_parquet(volumes_cache_file, engine="fastparquet" if False else "auto")
+                except Exception as e:
+                    set_status(f"Cache save warning: {e}")
+        # ── end cache block ────────────────────────────────────────────────
 
         if prices.empty or len(prices.columns) < 5:
-            raise ValueError(f"Failed to download price data. Check Nasdaq API connectivity.")
+            raise ValueError("Failed to load price data. Check Nasdaq API connectivity.")
+
+
 
         
         set_status("Fetching VIX data...")

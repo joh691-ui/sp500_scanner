@@ -10,3 +10,4 @@ sp500_scanner_dashboard.html
 sp500_scanner_results.csv
 sp500_optimal_params.csv
 status.json
+price_cache/
