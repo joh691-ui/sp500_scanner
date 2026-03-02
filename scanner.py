@@ -8,10 +8,12 @@ import requests
 from io import StringIO
 import threading
 import json
+import time
 
 warnings.filterwarnings('ignore')
 
 # Konfiguration
+
 LOOKBACK_CANDIDATES = [1, 2, 3, 4, 5, 6, 9, 12]
 HOLD_CANDIDATES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 MIN_HISTORY_DAYS = 252 * 5  # ~5 år
@@ -112,14 +114,23 @@ def run_scan(output_dir="."):
         
         set_status(f"Downloading price data since {download_start} (this takes a while)...")
         
-        BATCH_SIZE = 100
+        BATCH_SIZE = 50
         all_prices = []
         all_volumes = []
+        
+        # Setup session to avoid 403 Forbidden
+        session = requests.Session()
+        session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'})
         
         for i in range(0, len(TICKERS), BATCH_SIZE):
             batch = TICKERS[i:i+BATCH_SIZE]
             set_status(f"Downloading price data: Batch {i//BATCH_SIZE + 1}/{(len(TICKERS)-1)//BATCH_SIZE + 1}")
-            raw = yf.download(batch, start=download_start, auto_adjust=True, threads=True, progress=False)
+            try:
+                raw = yf.download(batch, start=download_start, auto_adjust=True, threads=False, progress=False, session=session)
+            except Exception as e:
+                set_status(f"Warning: yf.download failed for batch {i//BATCH_SIZE + 1}: {e}")
+                continue
+                
             if isinstance(raw.columns, pd.MultiIndex):
                 p = raw['Close'].copy()
                 v = raw['Volume'].copy()
@@ -139,14 +150,19 @@ def run_scan(output_dir="."):
             all_prices.append(p)
             all_volumes.append(v)
             
-        prices = pd.concat(all_prices, axis=1)
-        volumes = pd.concat(all_volumes, axis=1)
-        prices = prices.loc[:, ~prices.columns.duplicated()].dropna(how='all')
-        volumes = volumes.loc[:, ~volumes.columns.duplicated()].dropna(how='all')
+        prices = pd.concat(all_prices, axis=1) if all_prices else pd.DataFrame()
+        volumes = pd.concat(all_volumes, axis=1) if all_volumes else pd.DataFrame()
+        if not prices.empty:
+            prices = prices.loc[:, ~prices.columns.duplicated()].dropna(how='all')
+        if not volumes.empty:
+            volumes = volumes.loc[:, ~volumes.columns.duplicated()].dropna(how='all')
+            
+        if prices.empty or len(prices) == 0:
+            raise ValueError(f"Failed to download price data for any ticker. Likely blocked by Yahoo Finance on this server IP.")
         
         set_status("Fetching VIX data...")
         try:
-            vix_raw = yf.download("^VIX", start=recent_start, auto_adjust=True, progress=False)['Close']
+            vix_raw = yf.download("^VIX", start=recent_start, auto_adjust=True, progress=False, session=session)['Close']
             current_vix = float(vix_raw.iloc[-1].iloc[0]) if hasattr(vix_raw.iloc[-1], 'iloc') else float(vix_raw.iloc[-1])
             vix_sma_s = vix_raw.rolling(20).mean().iloc[-1]
             vix_sma = float(vix_sma_s.iloc[0]) if hasattr(vix_sma_s, 'iloc') else float(vix_sma_s)
@@ -360,6 +376,9 @@ def run_scan(output_dir="."):
                 'Flags': flag_str,
                 'Mom_Flagged': mom_flagged,
             })
+            
+        if not results:
+            raise ValueError(f"No results generated. Checked {len(OPTIMAL_PARAMS)} tickers, {len(prices.columns)} had price data but 0 had sufficient history (>=200 days).")
             
         df = pd.DataFrame(results).sort_values('Score', ascending=False).reset_index(drop=True)
         df['Rank'] = range(1, len(df) + 1)
