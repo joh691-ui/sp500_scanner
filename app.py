@@ -20,7 +20,7 @@ LOADING_PAGE = """<!DOCTYPE html>
 <html lang="sv">
 <head>
   <meta charset="UTF-8">
-  <title>S&amp;P 500 Scanner — Loading...</title>
+  <title>📊 Stock Scanner — Loading...</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0a0e17; color: #e2e8f0; font-family: 'Segoe UI', sans-serif;
@@ -42,7 +42,7 @@ LOADING_PAGE = """<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>S&amp;P 500 MOMENTUM SCANNER</h1>
+  <h1>📊 STOCK MOMENTUM SCANNER</h1>
   <p class="subtitle">Building dashboard — this takes about 2 minutes</p>
   <div class="progress-wrap">
     <div class="progress-bg"><div class="progress-bar" id="bar"></div></div>

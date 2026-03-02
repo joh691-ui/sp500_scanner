@@ -742,7 +742,7 @@ def run_scan(output_dir=".", market="SP500"):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>S&amp;P 500 Scanner — {stockholm_now.strftime('%Y-%m-%d')}</title>
+<title>📊 Stock Scanner — {stockholm_now.strftime('%Y-%m-%d')}</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root {{
@@ -828,7 +828,7 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 
     <div class="header">
     <div class="header-left">
-        <h1>STOCK MOMENTUM SCANNER</h1>
+        <h1>📊 STOCK MOMENTUM SCANNER</h1>
         <div class="subtitle">{market_flag} {market_title} — Per-stock optimal lookback × hold | {len(df)} stocks scanned</div>
     </div>
     <div class="header-right">
