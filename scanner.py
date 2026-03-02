@@ -134,7 +134,7 @@ def fetch_nordic_instruments(market="STO"):
                         "symbol": r.get("symbol", ""),
                         "fullName": r.get("fullName", ""),
                         "sector": r.get("sector", "Unknown"),
-                        "orderbookId": r.get("id", ""),
+                        "orderbookId": r.get("orderbookId", ""),
                     })
                 pagination = data.get("pagination", {})
                 if page >= pagination.get("totalPages", 1):
