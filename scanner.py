@@ -762,11 +762,43 @@ function filterTable() {{
     }});
 }}
 
+function parseProgress(msg) {{
+    if (!msg) return {{pct:1, label:'Starting…'}};
+    let m = msg.match(/(\d+)\/(\d+)/);
+    if (msg.includes('Downloading') && m) {{
+        let p = Math.round(5 + (parseInt(m[1])/parseInt(m[2]))*40);
+        return {{pct:p, label:'⬇️ Downloading… '+m[1]+'/'+m[2]}};
+    }}
+    if (msg.includes('Downloading')) return {{pct:5, label:'⬇️ Downloading price data…'}};
+    if (msg.includes('VIX')) return {{pct:46, label:'📊 Fetching VIX…'}};
+    if (msg.includes('Optimizing') && m) {{
+        let p = Math.round(50 + (parseInt(m[1])/parseInt(m[2]))*30);
+        return {{pct:p, label:'🔬 Optimising… '+m[1]+'/'+m[2]}};
+    }}
+    if (msg.includes('Optimizing')) return {{pct:50, label:'🔬 Sharpe optimisation…'}};
+    if (msg.includes('Calculating')) return {{pct:82, label:'⚡ Calculating signals…'}};
+    if (msg.includes('Generating')) return {{pct:94, label:'🖥️ Generating dashboard…'}};
+    if (msg.includes('Done')) return {{pct:100, label:'✅ Done!'}};
+    return {{pct:2, label:msg}};
+}}
+
+function ensureProgressBar() {{
+    if (!document.getElementById('updateBar')) {{
+        const s = document.getElementById('statusMsg');
+        const wrap = document.createElement('span');
+        wrap.id = 'progressWrap';
+        wrap.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-left:8px;';
+        wrap.innerHTML = '<span style="background:#1e293b;border-radius:99px;width:120px;height:6px;display:inline-block;overflow:hidden;"><span id="updateBar" style="display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#2563eb,#3b82f6);width:0%;transition:width 0.5s ease;"></span></span><span id="updatePct" style="font-size:11px;color:#3b82f6;font-family:monospace;">0%</span>';
+        s.parentNode.insertBefore(wrap, s);
+    }}
+}}
+
 function startUpdate() {{
     const btn = document.getElementById('updateBtn');
     const statusMsg = document.getElementById('statusMsg');
     btn.disabled = true;
     btn.innerText = "Starting...";
+    ensureProgressBar();
     
     fetch('/api/update', {{method: 'POST'}})
         .then(res => res.json())
@@ -795,16 +827,23 @@ function pollStatus() {{
         .then(data => {{
             if (data.is_running) {{
                 btn.innerText = "Updating...";
-                statusMsg.innerText = data.message || "Working...";
+                let {{pct, label}} = parseProgress(data.message || '');
+                statusMsg.innerText = label;
+                let bar = document.getElementById('updateBar');
+                let pctEl = document.getElementById('updatePct');
+                if (bar) bar.style.width = pct + '%';
+                if (pctEl) pctEl.innerText = pct + '%';
                 setTimeout(pollStatus, 1000);
             }} else {{
                 btn.innerText = "Update Data";
                 btn.disabled = false;
+                let bar = document.getElementById('updateBar');
+                if (bar) bar.style.width = '100%';
                 if (data.message && data.message.startsWith("Error")) {{
                     statusMsg.innerText = data.message;
                     statusMsg.style.color = "#ef4444";
                 }} else {{
-                    statusMsg.innerText = "Update complete. Reloading page...";
+                    statusMsg.innerText = "✅ Update complete. Reloading...";
                     setTimeout(() => location.reload(), 2000);
                 }}
             }}
