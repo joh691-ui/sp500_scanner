@@ -158,7 +158,7 @@ def run_scan(output_dir="."):
         set_status(f"Found {len(TICKERS)} stocks. Determining timeframe...")
         
         lookback_days = max(LOOKBACK_CANDIDATES) * TRADING_DAYS_PER_MONTH
-        opt_start = (datetime.now() - timedelta(days=252*11)).strftime('%Y-%m-%d')
+        opt_start = (datetime.now() - timedelta(days=252*6)).strftime('%Y-%m-%d')
         recent_start = (datetime.now() - timedelta(days=lookback_days + 60)).strftime('%Y-%m-%d')
         
         download_start = recent_start if FAST_MODE else opt_start
@@ -180,7 +180,7 @@ def run_scan(output_dir="."):
                 return ticker, df[['close']], df[['volume']]
             return ticker, None, None
 
-        MAX_WORKERS = 10
+        MAX_WORKERS = 25
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = {executor.submit(fetch_ticker, t): t for t in TICKERS}
             done_count = 0
