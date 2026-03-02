@@ -464,6 +464,28 @@ def run_scan(output_dir="."):
             'Unknown': '#6b7280',
         }
         
+        def make_sparkline(ticker, w=90, h=36):
+            if ticker not in prices.columns:
+                return ''
+            s = prices[ticker].dropna().iloc[-126:]  # ~6 months
+            if len(s) < 5:
+                return ''
+            # Downsample to max 63 points
+            step = max(1, len(s) // 63)
+            s = s.iloc[::step]
+            vals = s.tolist()
+            lo, hi = min(vals), max(vals)
+            if hi == lo:
+                return ''
+            pad = 2
+            def sx(i): return round(pad + i / (len(vals)-1) * (w - 2*pad), 1)
+            def sy(v): return round(pad + (1 - (v - lo)/(hi - lo)) * (h - 2*pad), 1)
+            pts = ' '.join(f'{sx(i)},{sy(v)}' for i, v in enumerate(vals))
+            color = '#22c55e' if vals[-1] >= vals[0] else '#ef4444'
+            return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg" style="display:block">'
+                    f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'
+                    f'</svg>')
+
         top_rows = ""
         for _, row in top_n.iterrows():
             sig_class = "strong-buy" if "STRONG" in row['Signal'] else "buy"
@@ -486,6 +508,7 @@ def run_scan(output_dir="."):
                 <td class="rank">#{int(row['Rank'])}</td>
                 <td class="ticker"><a href="https://finance.yahoo.com/chart/{row['Ticker']}" target="_blank" style="color:inherit;text-decoration:none;">{row['Ticker']}</a><br><span class="etf-name">{row['Name'][:35]}</span>
                     <br><span class="sector-badge" style="background:{sector_color}20;color:{sector_color};border:1px solid {sector_color}40">{row['Sector']}</span></td>
+                <td style="padding:4px 8px">{make_sparkline(row['Ticker'])}</td>
                 <td class="price">${row['Price']:.2f}</td>
                 <td class="score">{row['Score']:.1f}</td>
                 <td class="signal"><span class="signal-badge {sig_class}">{sig_text}</span></td>
@@ -695,7 +718,7 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 <table>
 <thead>
     <tr>
-        <th title="Ranking by composite score">Rank</th><th title="Stock ticker symbol and company name">Ticker</th><th title="Latest closing price (USD)">Price</th><th title="Composite score (0–100+): weighted sum of momentum, confirmation, slope, Sharpe, distance from high, volume and trend runway. Adjusted by VIX regime.">Score</th><th title="BUY = positive momentum in optimal lookback. STRONG BUY = also confirmed by trend slope and multi-timeframe.">Signal</th>
+        <th title="Ranking by composite score">Rank</th><th title="Stock ticker symbol and company name">Ticker</th><th title="6-month price chart">Chart</th><th title="Latest closing price (USD)">Price</th><th title="Composite score (0–100+): weighted sum of momentum, confirmation, slope, Sharpe, distance from high, volume and trend runway. Adjusted by VIX regime.">Score</th><th title="BUY = positive momentum in optimal lookback. STRONG BUY = also confirmed by trend slope and multi-timeframe.">Signal</th>
         <th title="Price return over the stock-specific optimal lookback period (the lookback that historically gave best Sharpe ratio).">Momentum (opt. LB)</th><th title="Multi-Timeframe momentum dots (1m/3m/6m/12m). Green = positive, Red = negative.">MTF ●</th><th title="Phase of the momentum cycle based on how much of the optimal hold period has been consumed. EARLY = fresh signal, MID = halfway, LATE = nearing end, OVER = signal expired.">Trend Phase</th><th title="Annualised 20-day historical volatility (standard deviation of daily returns × √252).">Vol 20d</th><th title="Historically optimal holding period in months for this stock (found by Sharpe optimisation).">Hold</th><th title="Suggested portfolio weight (%), calculated as inverse-volatility weighted, capped at 10% per stock.">Weight</th>
     </tr>
 </thead>
