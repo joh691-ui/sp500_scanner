@@ -6900,8 +6900,13 @@ function pollStatus() {
             } else {
                 btn.innerText = "Update Data";
                 btn.disabled = false;
-                statusMsg.innerText = "Update complete. Reloading page...";
-                setTimeout(() => location.reload(), 2000);
+                if (data.message && data.message.startsWith("Error")) {
+                    statusMsg.innerText = data.message;
+                    statusMsg.style.color = "#ef4444";
+                } else {
+                    statusMsg.innerText = "Update complete. Reloading page...";
+                    setTimeout(() => location.reload(), 2000);
+                }
             }
         });
 }
