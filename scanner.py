@@ -105,6 +105,92 @@ def fetch_nasdaq_history(symbol, from_date, to_date=None, session=None):
     except Exception as e:
         return pd.DataFrame()
 
+
+NORDIC_BASE = "https://api.nasdaq.com/api/nordic"
+NORDIC_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+def fetch_nordic_instruments(market="STO"):
+    """Return list of dicts with symbol, fullName, sector, orderbookId."""
+    results = []
+    for segment in ["LARGE_CAP", "MID_CAP", "SMALL_CAP"]:
+        page = 1
+        while True:
+            try:
+                resp = requests.get(
+                    f"{NORDIC_BASE}/screener/shares",
+                    params={"market": market, "segment": segment,
+                            "category": "MAIN_MARKET", "tableonly": "true",
+                            "lang": "en", "size": 200, "page": page},
+                    headers=NORDIC_HEADERS, timeout=15
+                )
+                if resp.status_code != 200:
+                    break
+                data = resp.json().get("data", {})
+                rows = data.get("instrumentListing", {}).get("rows", [])
+                if not rows:
+                    break
+                for r in rows:
+                    results.append({
+                        "symbol": r.get("symbol", ""),
+                        "fullName": r.get("fullName", ""),
+                        "sector": r.get("sector", "Unknown"),
+                        "orderbookId": r.get("id", ""),
+                    })
+                pagination = data.get("pagination", {})
+                if page >= pagination.get("totalPages", 1):
+                    break
+                page += 1
+            except Exception:
+                break
+    # deduplicate by symbol
+    seen = set()
+    unique = []
+    for r in results:
+        if r["symbol"] not in seen and r["symbol"] and r["orderbookId"]:
+            seen.add(r["symbol"])
+            unique.append(r)
+    return unique
+
+
+def fetch_nordic_history(orderbook_id, from_date, to_date=None, session=None):
+    if to_date is None:
+        to_date = datetime.now().strftime("%Y-%m-%d")
+    s = session or requests.Session()
+    s.headers.update(NORDIC_HEADERS)
+    try:
+        resp = s.get(
+            f"{NORDIC_BASE}/instruments/{orderbook_id}/chart",
+            params={"assetClass": "SHARES", "lang": "en",
+                    "fromDate": from_date, "toDate": to_date},
+            timeout=15
+        )
+        if resp.status_code != 200:
+            return pd.DataFrame()
+        points = resp.json().get("data", {}).get("CP", [])
+        if not points:
+            return pd.DataFrame()
+        records = []
+        for p in points:
+            z = p.get("z", {})
+            if z:
+                try: close_val = float(z.get("close") or 0) or None
+                except: close_val = None
+                try: vol_val = int(str(z.get("volume") or "0").replace(",", "")) or None
+                except: vol_val = None
+                records.append({"date": z.get("dateTime"), "close": close_val, "volume": vol_val})
+        df = pd.DataFrame(records)
+        if df.empty:
+            return df
+        df["date"] = pd.to_datetime(df["date"], format="mixed", dayfirst=False)
+        df = df.set_index("date").sort_index()
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        df.index = df.index.normalize()
+        df = df.groupby(df.index).last()
+        return df.dropna(subset=["close"])
+    except Exception:
+        return pd.DataFrame()
+
 def optimize_params(series, lookback_candidates, hold_candidates, tdpm):
     best_sharpe = -np.inf
     best_lb = lookback_candidates[0]
@@ -133,52 +219,69 @@ def optimize_params(series, lookback_candidates, hold_candidates, tdpm):
                 best_hold = hold
     return best_lb, best_hold, best_sharpe
 
-def run_scan(output_dir="."):
+def run_scan(output_dir=".", market="SP500"):
     global SCAN_STATUS
     
     try:
-        set_status("Fetching S&P 500 components from Wikipedia...")
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-        tables = pd.read_html(StringIO(resp.text))
-        sp500_table = tables[0]
-        sp500_table.columns = sp500_table.columns.str.strip()
-        
-        ticker_col = [c for c in sp500_table.columns if 'Symbol' in c or 'Ticker' in c][0]
-        name_col   = [c for c in sp500_table.columns if 'Security' in c or 'Name' in c][0]
-        sector_col = [c for c in sp500_table.columns if 'Sector' in c][0]
-        
-        sp500_table['yf_ticker'] = sp500_table[ticker_col].str.replace('.', '-', regex=False)
-        TICKERS = sp500_table['yf_ticker'].tolist()
-        STOCK_NAMES = dict(zip(sp500_table['yf_ticker'], sp500_table[name_col]))
-        STOCK_SECTORS = dict(zip(sp500_table['yf_ticker'], sp500_table[sector_col]))
-        
-        set_status(f"Found {len(TICKERS)} stocks. Determining timeframe...")
-        
+        if market == "STO":
+            set_status("Fetching Stockholmsbörsen instrument list (STO)...")
+            instruments = fetch_nordic_instruments("STO")
+            if not instruments:
+                raise ValueError("Failed to fetch instruments from Nasdaq Nordic API.")
+            TICKERS      = [r["symbol"] for r in instruments]
+            STOCK_NAMES  = {r["symbol"]: r["fullName"] for r in instruments}
+            STOCK_SECTORS= {r["symbol"]: r["sector"] for r in instruments}
+            ORDERBOOK_IDS= {r["symbol"]: r["orderbookId"] for r in instruments}
+            set_status(f"Found {len(TICKERS)} Swedish stocks. Fetching price history...")
+        else:
+            set_status("Fetching S&P 500 components from Wikipedia...")
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+            resp = requests.get(url, headers=headers, timeout=15)
+            resp.raise_for_status()
+            tables = pd.read_html(StringIO(resp.text))
+            sp500_table = tables[0]
+            sp500_table.columns = sp500_table.columns.str.strip()
+            ticker_col = [c for c in sp500_table.columns if 'Symbol' in c or 'Ticker' in c][0]
+            name_col   = [c for c in sp500_table.columns if 'Security' in c or 'Name' in c][0]
+            sector_col = [c for c in sp500_table.columns if 'Sector' in c][0]
+            sp500_table['yf_ticker'] = sp500_table[ticker_col].str.replace('.', '-', regex=False)
+            TICKERS      = sp500_table['yf_ticker'].tolist()
+            STOCK_NAMES  = dict(zip(sp500_table['yf_ticker'], sp500_table[name_col]))
+            STOCK_SECTORS= dict(zip(sp500_table['yf_ticker'], sp500_table[sector_col]))
+            ORDERBOOK_IDS= {}
+            set_status(f"Found {len(TICKERS)} stocks. Fetching price history...")
+
         lookback_days = max(LOOKBACK_CANDIDATES) * TRADING_DAYS_PER_MONTH
-        opt_start = (datetime.now() - timedelta(days=252*6)).strftime('%Y-%m-%d')
+        opt_start    = (datetime.now() - timedelta(days=252*6)).strftime('%Y-%m-%d')
         recent_start = (datetime.now() - timedelta(days=lookback_days + 60)).strftime('%Y-%m-%d')
-        
         download_start = recent_start if FAST_MODE else opt_start
-        
-        set_status(f"Downloading price data since {download_start} using Nasdaq API (this takes ~30s)...")
-        
+
+        set_status(f"Downloading price data since {download_start} using Nasdaq API...")
+
         all_prices_dict = {}
         all_volumes_dict = {}
-        
-        # Setup session to avoid 403 Forbidden
+
         session = requests.Session()
         session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'})
-        
+
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        
-        def fetch_ticker(ticker):
-            df = fetch_nasdaq_history(ticker, download_start, session=session)
-            if not df.empty:
-                return ticker, df[['close']], df[['volume']]
-            return ticker, None, None
+
+        if market == "STO":
+            def fetch_ticker(ticker):
+                oid = ORDERBOOK_IDS.get(ticker)
+                if not oid:
+                    return ticker, None, None
+                df = fetch_nordic_history(oid, download_start, session=session)
+                if not df.empty:
+                    return ticker, df[['close']], df[['volume']]
+                return ticker, None, None
+        else:
+            def fetch_ticker(ticker):
+                df = fetch_nasdaq_history(ticker, download_start, session=session)
+                if not df.empty:
+                    return ticker, df[['close']], df[['volume']]
+                return ticker, None, None
 
         MAX_WORKERS = 25
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -189,20 +292,19 @@ def run_scan(output_dir="."):
                 done_count += 1
                 if done_count % 50 == 0:
                     set_status(f"Downloading price data: {done_count}/{len(TICKERS)} completed")
-                    
                 try:
                     t, p, v = future.result()
                     if p is not None and not p.empty:
                         all_prices_dict[t] = p['close']
                         all_volumes_dict[t] = v['volume']
-                except Exception as e:
+                except Exception:
                     pass
-        
+
         prices = pd.DataFrame(all_prices_dict)
         volumes = pd.DataFrame(all_volumes_dict)
-        
-        if prices.empty or len(prices.columns) < 50:
-            raise ValueError(f"Failed to download price data for any ticker. Likely blocked by Nasdaq API or network issue.")
+
+        if prices.empty or len(prices.columns) < 5:
+            raise ValueError(f"Failed to download price data. Check Nasdaq API connectivity.")
 
         
         set_status("Fetching VIX data...")
@@ -569,7 +671,11 @@ def run_scan(output_dir="."):
             
         regime_colors = {"LOW_VOL": "#22c55e", "NORMAL": "#eab308", "ELEVATED": "#f97316", "CRISIS": "#ef4444"}
         regime_color = regime_colors.get(regime, "#6b7280")
-        
+
+        # Market display labels
+        market_title = "Stockholmsbörsen (STO)" if market == "STO" else "S&amp;P 500"
+        market_flag  = "🇸🇪" if market == "STO" else "🇺🇸"
+
         # Compute Swedish time (CET/CEST) cleanly
         try:
             from zoneinfo import ZoneInfo
@@ -668,8 +774,8 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 
     <div class="header">
     <div class="header-left">
-        <h1>S&amp;P 500 MOMENTUM SCANNER</h1>
-        <div class="subtitle">Per-stock optimal lookback × hold period | {len(df)} stocks scanned</div>
+        <h1>STOCK MOMENTUM SCANNER</h1>
+        <div class="subtitle">{market_flag} {market_title} — Per-stock optimal lookback × hold | {len(df)} stocks scanned</div>
     </div>
     <div class="header-right">
         <div class="scan-date">{stockholm_now.strftime('%Y-%m-%d %H:%M')} Stockholm</div>
@@ -709,8 +815,11 @@ td {{ padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--border
 
 <div class="section-title">
     <div>TOP {TOP_N} — STRONGEST BUY SIGNALS</div>
-    <div>
-        <button id="updateBtn" class="btn" onclick="startUpdate()">Update Data</button>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text-muted);font-family:monospace">Market:</span>
+        <button id="mktUS" onclick="setMarket('SP500')" class="btn" style="padding:5px 12px;font-size:12px;background:#1e3a5f">🇺🇸 S&amp;P 500</button>
+        <button id="mktSE" onclick="setMarket('STO')" class="btn" style="padding:5px 12px;font-size:12px;background:#1a3020">🇸🇪 Stockholm</button>
+        <button id="updateBtn" class="btn" onclick="startUpdate()" style="margin-left:8px">Update Data</button>
         <span id="statusMsg"></span>
     </div>
 </div>
@@ -816,6 +925,17 @@ function ensureProgressBar() {{
     }}
 }}
 
+let selectedMarket = '{market}';  // pre-fill with the market of this dashboard
+
+function setMarket(mkt) {{
+    selectedMarket = mkt;
+    document.getElementById('mktUS').style.opacity = mkt === 'SP500' ? '1' : '0.5';
+    document.getElementById('mktSE').style.opacity = mkt === 'STO'   ? '1' : '0.5';
+    document.getElementById('mktUS').style.border = mkt === 'SP500' ? '2px solid #3b82f6' : '2px solid transparent';
+    document.getElementById('mktSE').style.border = mkt === 'STO'   ? '2px solid #22c55e' : '2px solid transparent';
+}}
+setMarket(selectedMarket);  // highlight current on load
+
 function startUpdate() {{
     const btn = document.getElementById('updateBtn');
     const statusMsg = document.getElementById('statusMsg');
@@ -823,7 +943,7 @@ function startUpdate() {{
     btn.innerText = "Starting...";
     ensureProgressBar();
     
-    fetch('/api/update', {{method: 'POST'}})
+    fetch('/api/update', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{market: selectedMarket}})}})
         .then(res => res.json())
         .then(data => {{
             if (data.status === 'started' || data.status === 'already_running') {{
@@ -898,7 +1018,7 @@ document.addEventListener("DOMContentLoaded", () => {{
         set_status(f"Error: {str(e)}", running=False)
         traceback.print_exc()
 
-def scan_in_background():
-    thread = threading.Thread(target=run_scan)
+def scan_in_background(market="SP500"):
+    thread = threading.Thread(target=run_scan, args=(".", market))
     thread.daemon = True
     thread.start()

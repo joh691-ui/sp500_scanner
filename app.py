@@ -124,10 +124,15 @@ def serve_dashboard():
 
 @app.route('/api/update', methods=['POST'])
 def update_data():
+    from flask import request as flask_request
+    body = flask_request.get_json(silent=True) or {}
+    market = body.get("market", "SP500")
+    if market not in ("SP500", "STO"):
+        market = "SP500"
     status = get_status()
     if not status.get("is_running", False):
-        set_status("Starting background task...", True)
-        scan_in_background()
+        set_status(f"Starting {market} scan...", True)
+        scan_in_background(market)
         return jsonify({"status": "started"})
     return jsonify({"status": "already_running"})
 
