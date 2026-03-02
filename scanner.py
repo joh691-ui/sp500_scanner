@@ -66,8 +66,6 @@ def optimize_params(series, lookback_candidates, hold_candidates, tdpm):
 
 def run_scan(output_dir="."):
     global SCAN_STATUS
-    if SCAN_STATUS["is_running"]:
-        return
     
     try:
         set_status("Hämtar S&P 500-komponenter från Wikipedia...")
