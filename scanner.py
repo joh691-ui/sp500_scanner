@@ -406,7 +406,7 @@ def run_scan(output_dir="."):
             top_rows += f"""
             <tr class="etf-row {sig_class}">
                 <td class="rank">#{int(row['Rank'])}</td>
-                <td class="ticker">{row['Ticker']}<br><span class="etf-name">{row['Name'][:35]}</span>
+                <td class="ticker"><a href="https://finance.yahoo.com/chart/{row['Ticker']}" target="_blank" style="color:inherit;text-decoration:none;">{row['Ticker']}</a><br><span class="etf-name">{row['Name'][:35]}</span>
                     <br><span class="sector-badge" style="background:{sector_color}20;color:{sector_color};border:1px solid {sector_color}40">{row['Sector']}</span></td>
                 <td class="price">${row['Price']:.2f}</td>
                 <td class="score">{row['Score']:.1f}</td>
@@ -439,7 +439,7 @@ def run_scan(output_dir="."):
             all_rows += f"""
             <tr class="full-row {sig_class}">
                 <td>{int(row['Rank'])}</td>
-                <td class="ticker">{row['Ticker']}<br><span class="etf-name">{row['Name'][:30]}</span></td>
+                <td class="ticker"><a href="https://finance.yahoo.com/chart/{row['Ticker']}" target="_blank" style="color:inherit;text-decoration:none;">{row['Ticker']}</a><br><span class="etf-name">{row['Name'][:30]}</span></td>
                 <td><span style="color:{sc};font-size:11px">{row['Sector'][:20]}</span></td>
                 <td>{row['Score']:.1f}</td>
                 <td style="color:{mom_color}">{row['Mom_Pct']:+.1f}%</td>
@@ -710,7 +710,7 @@ function pollStatus() {{
             if (data.is_running) {{
                 btn.innerText = "Uppdaterar...";
                 statusMsg.innerText = data.message || "Arbetar...";
-                setTimeout(pollStatus, 3000);
+                setTimeout(pollStatus, 1000);
             }} else {{
                 btn.innerText = "Uppdatera Data";
                 btn.disabled = false;

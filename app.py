@@ -30,7 +30,7 @@ def serve_dashboard():
                         .then(data => {
                             document.getElementById('msg').innerText = data.message || "Arbetar...";
                             if (data.is_running) {
-                                setTimeout(poll, 3000);
+                                setTimeout(poll, 1000);
                             } else {
                                 location.reload();
                             }
